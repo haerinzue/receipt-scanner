@@ -1,6 +1,6 @@
 import { getSession, signIn, signOut } from "./auth.js";
 import { readReceipt } from "./ocr.js";
-import { saveReceipt, getReceipts, getReceiptImageUrl } from "./database.js";
+import { saveReceipt, getReceipts, getReceiptImageUrl, deleteReceipt, findDuplicateReceipt } from "./database.js";
 
 const $ = id => document.getElementById(id);
 let imageData = null, imageBlob = null, stream = null;
@@ -39,30 +39,57 @@ function stopCamera() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   $("cameraControls").classList.add("hidden");
 }
+let cachedRecords = [];
+function peso(v) { return Number(v || 0).toLocaleString("en-PH",{style:"currency",currency:"PHP"}); }
 async function refresh() {
   try {
-    let records = await getReceipts($("search").value);
+    cachedRecords = await getReceipts();
+    const searchTerm = ($("search").value || "").trim().toLowerCase();
+    let records = searchTerm ? cachedRecords.filter(r => `${r.reference_number} ${r.payment_method} ${r.amount} ${r.staff_name || ""}`.toLowerCase().includes(searchTerm)) : [...cachedRecords];
     const staffFilter = $("staffFilter")?.value || "";
     const shiftFilter = $("shiftFilter")?.value || "";
     if (staffFilter) records = records.filter(r => r.staff_name === staffFilter);
     if (shiftFilter) records = records.filter(r => r.shift_code === shiftFilter);
     const box = $("recordList"); box.innerHTML = "";
     if (!records.length) { box.innerHTML = '<div class="empty">Wala pang tugmang records.</div>'; return; }
+    const grouped = new Map();
     for (const r of records) {
-      const el = document.createElement("div"); el.className = "record";
-      const left = document.createElement("div");
-      const strong = document.createElement("strong"); strong.textContent = `${r.payment_method} · ₱${Number(r.amount).toLocaleString("en-PH",{minimumFractionDigits:2})}`;
-      const meta = document.createElement("div"); meta.className = "meta";
-      meta.textContent = `Ref: ${r.reference_number} · Transaction: ${r.transaction_date || "—"} ${r.transaction_time || ""}`;
-      const assignment = document.createElement("div"); assignment.className = "meta";
-      const shiftNames = { S1: "Shift 1 · 12 MN–9 AM", S2: "Shift 2 · 9 AM–9 PM", S3: "Shift 3 · 9 PM–12 MN" };
-      assignment.textContent = `Staff: ${r.staff_name || "Hindi nakatalaga"} · ${shiftNames[r.shift_code] || "Walang shift"}`;
-      const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = `Saved ${new Date(r.created_at).toLocaleString()}`;
-      left.append(strong, meta, assignment, tag);
-      const right = document.createElement("div"); const view = document.createElement("button");
-      view.className = "btn"; view.textContent = "Tingnan";
-      view.onclick = async () => { try { const url = await getReceiptImageUrl(r.receipt_image_path); window.open(url, "_blank", "noopener"); } catch(e) { alert("Hindi mabuksan ang image: " + e.message); } };
-      right.append(view); el.append(left,right); box.append(el);
+      const key = `${r.shift_code || "UNASSIGNED"}|${r.staff_name || "Hindi nakatalaga"}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(r);
+    }
+    const labels = {S1:"Shift 1 · 12 MN–9 AM",S2:"Shift 2 · 9 AM–9 PM",S3:"Shift 3 · 9 PM–12 MN"};
+    for (const [key, list] of grouped) {
+      const [shift, staff] = key.split("|");
+      const group = document.createElement("section"); group.className = "record-group";
+      const heading = document.createElement("h3"); heading.className = "record-group-title";
+      heading.textContent = `${labels[shift] || "Walang shift"} · ${staff} (${list.length})`;
+      group.append(heading);
+      for (const r of list) {
+        const el = document.createElement("div"); el.className = "record";
+        const left = document.createElement("div");
+        const strong = document.createElement("strong"); strong.textContent = `${r.payment_method} · ${peso(r.amount)}`;
+        const meta = document.createElement("div"); meta.className = "meta";
+        meta.textContent = `Ref: ${r.reference_number} · Transaction: ${r.transaction_date || "—"} ${r.transaction_time || ""}`;
+        const assignment = document.createElement("div"); assignment.className = "meta";
+        assignment.textContent = `Staff: ${r.staff_name || "Hindi nakatalaga"} · ${labels[r.shift_code] || "Walang shift"}`;
+        const tag = document.createElement("span"); tag.className = "tag";
+        tag.textContent = `Saved ${r.created_at ? new Date(r.created_at).toLocaleString("en-PH") : "—"}`;
+        left.append(strong,meta,assignment,tag);
+        const right = document.createElement("div"); right.className = "record-buttons";
+        const view = document.createElement("button"); view.className = "btn"; view.textContent = "Tingnan";
+        view.onclick = async () => { try { const url = await getReceiptImageUrl(r.receipt_image_path); window.open(url,"_blank","noopener"); } catch(e) { alert("Hindi mabuksan ang image: "+e.message); } };
+        const del = document.createElement("button"); del.className = "btn danger"; del.textContent = "Delete";
+        del.onclick = async () => {
+          const ok = confirm(`Sigurado ka bang ide-delete ang resibong ito?\\n\\n${r.payment_method} · ${peso(r.amount)}\\nReference: ${r.reference_number}\\nStaff: ${r.staff_name || "—"} / ${labels[r.shift_code] || "—"}\\n\\nHindi na ito maibabalik.`);
+          if (!ok) return;
+          del.disabled = true;
+          try { await deleteReceipt(r); status("Na-delete ang resibo."); await refresh(); }
+          catch(e) { alert("Hindi kumpleto ang deletion: "+e.message); del.disabled = false; await refresh(); }
+        };
+        right.append(view,del); el.append(left,right); group.append(el);
+      }
+      box.append(group);
     }
   } catch (e) { $("recordList").innerHTML = `<div class="empty">Hindi makuha ang records: ${escapeHtml(e.message)}</div>`; }
 }
@@ -158,11 +185,29 @@ $("saveBtn").onclick = async () => {
   const staffName = activeStaff;
   const shiftCode = activeShift;
   if (!staffName || !shiftCode) return status("Piliin muna ang admin at shift bago magpatuloy.");
-  $("saveBtn").disabled = true; status("Sine-save ang image at record sa Supabase...");
+  $("saveBtn").disabled = true; status("Sinusuri muna kung duplicate ang reference number...");
+  try {
+    const duplicate = await findDuplicateReceipt(method, reference);
+    if (duplicate) {
+      $("duplicateNotice").textContent = `DUPLICATE: May existing ${duplicate.payment_method} receipt na may reference ${duplicate.reference_number} (amount ${peso(duplicate.amount)}). Hindi ito ise-save.`;
+      $("duplicateNotice").classList.remove("hidden");
+      status("Hindi itinuloy ang save dahil duplicate ang reference number.");
+      $("saveBtn").disabled = false;
+      return;
+    }
+  } catch(e) { status("Hindi ma-check ang duplicate: " + e.message); $("saveBtn").disabled = false; return; }
+  $("duplicateNotice").classList.add("hidden");
+  status("Walang kaparehong reference. Sine-save ang image at record...");
   try {
     await saveReceipt({ method, reference, amount, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value, staffName, shiftCode }, imageBlob);
     status("Matagumpay na na-save sa Supabase!"); $("duplicateNotice").classList.add("hidden"); await refresh();
-  } catch(e) { status("Hindi na-save: " + e.message); }
+  } catch(e) {
+    if (String(e.message).startsWith("DUPLICATE_RECEIPT:")) {
+      $("duplicateNotice").textContent = String(e.message).replace("DUPLICATE_RECEIPT:","");
+      $("duplicateNotice").classList.remove("hidden");
+      status("Hindi na-save: duplicate reference number.");
+    } else status("Hindi na-save: " + e.message);
+  }
   finally { $("saveBtn").disabled = false; }
 };
 $("clearBtn").onclick = () => {
@@ -176,5 +221,63 @@ $("search").oninput = refresh;
 $("staffFilter").onchange = refresh;
 $("shiftFilter").onchange = refresh;
 
+
+const reportShiftNames = {S1:"12 MN–9 AM",S2:"9 AM–9 PM",S3:"9 PM–12 MN"};
+function reportRows() {
+  const from=$("reportDateFrom").value, to=$("reportDateTo").value;
+  if (from && to && from>to) throw new Error("Mali ang date range: ang FROM ay hindi puwedeng mas huli sa TO.");
+  return cachedRecords.filter(r =>
+    (!from || (r.transaction_date || "") >= from) &&
+    (!to || (r.transaction_date || "") <= to) &&
+    (!$("reportShift").value || r.shift_code === $("reportShift").value) &&
+    (!$("reportStaff").value || r.staff_name === $("reportStaff").value) &&
+    (!$("reportMethod").value || r.payment_method === $("reportMethod").value)
+  ).sort((a,b)=>`${a.transaction_date||""} ${a.transaction_time||""}`.localeCompare(`${b.transaction_date||""} ${b.transaction_time||""}`));
+}
+function buildReportHTML(rows) {
+  const from=$("reportDateFrom").value || "All dates", to=$("reportDateTo").value || "All dates";
+  const shift=$("reportShift").value ? `Shift: ${reportShiftNames[$("reportShift").value]}` : "All shifts";
+  const staff=$("reportStaff").value || "All staff";
+  const method=$("reportMethod").value || "All payment methods";
+  const total=rows.reduce((s,r)=>s+Number(r.amount||0),0);
+  const fmt=n=>Number(n||0).toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const byMethod=["GCash","Maya","BPI"].map(m=>({m,total:rows.filter(r=>r.payment_method===m).reduce((s,r)=>s+Number(r.amount||0),0)}));
+  const groupedByDate = new Map();
+  rows.forEach(r => { const day = r.transaction_date || "No transaction date"; if (!groupedByDate.has(day)) groupedByDate.set(day, []); groupedByDate.get(day).push(r); });
+  let table = "";
+  for (const [day, dayRows] of groupedByDate) {
+    const dayTotal = dayRows.reduce((s,r)=>s+Number(r.amount||0),0);
+    table += `<tr class="day-band"><th colspan="6">Date: ${esc(day)}</th></tr>`;
+    table += dayRows.map(r=>`<tr><td>${esc(r.transaction_date||"—")} ${esc(r.transaction_time||"")}</td><td>${esc(r.staff_name||"—")}</td><td>${esc(reportShiftNames[r.shift_code]||"—")}</td><td>${esc(r.payment_method||"—")}</td><td>${esc(r.reference_number||"—")}</td><td class="money">₱${fmt(r.amount)}</td></tr>`).join("");
+    table += `<tr class="day-subtotal"><th colspan="5">Sub-total for ${esc(day)} (${dayRows.length} receipts)</th><th class="money">₱${fmt(dayTotal)}</th></tr>`;
+  }
+  return `<div class="print-report"><header><h1>Receipt Collection Report</h1><p>Date: ${esc(from)} to ${esc(to)}</p><p>${esc(shift)} · ${esc(staff)} · ${esc(method)}</p></header>
+  <div class="report-kpis"><div><b>${rows.length}</b><span>Total Receipts</span></div><div><b>₱${fmt(total)}</b><span>Grand Total</span></div>${byMethod.map(x=>`<div><b>₱${fmt(x.total)}</b><span>${x.m}</span></div>`).join("")}</div>
+  <table><thead><tr><th>Transaction Date / Time</th><th>Encoded By</th><th>Shift</th><th>Payment Method</th><th>Reference</th><th>Amount</th></tr></thead><tbody>${table||'<tr><td colspan="6">No matching receipts</td></tr>'}</tbody><tfoot><tr><th colspan="5">GRAND TOTAL (${rows.length} receipts)</th><th class="money">₱${fmt(total)}</th></tr></tfoot></table>
+  <p class="report-generated">Generated: ${esc(new Date().toLocaleString("en-PH"))}</p></div>`;
+}
+function previewReport() {
+  try { const rows=reportRows(); $("reportPreview").innerHTML=buildReportHTML(rows); }
+  catch(e) { $("reportPreview").textContent=e.message; }
+}
+$("openReport").onclick=()=>{ $("reportDialog").showModal(); previewReport(); };
+$("closeReport").onclick=()=>$("reportDialog").close();
+["reportDateFrom","reportDateTo","reportShift","reportStaff","reportMethod"].forEach(id=>$(id).addEventListener("change",previewReport));
+$("previewReport").onclick=previewReport;
+$("printReport").onclick=()=>{
+  let rows;
+  try { rows=reportRows(); } catch(e) { alert(e.message); return; }
+  if (!rows.length) { alert("Walang resibong pasok sa napiling report filters."); return; }
+  const report=buildReportHTML(rows);
+  const w=window.open("","_blank");
+  if (!w) { alert("Na-block ang print window. Payagan ang pop-ups para sa site na ito."); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt Collection Report</title><style>
+  @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#222;margin:0}.print-report header{text-align:center;margin-bottom:18px}.print-report h1{font-size:20px;margin:0 0 5px}.print-report header p{margin:2px;color:#555}
+  .report-kpis{display:flex;gap:10px;margin:14px 0}.report-kpis div{border:1px solid #bbb;padding:8px 12px;min-width:115px;flex:1}.report-kpis b,.report-kpis span{display:block}.report-kpis b{font-size:15px}.report-kpis span{font-size:10px;color:#555;margin-top:3px}
+  table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:6px;text-align:left;vertical-align:top}thead th{background:#e8ebf0}.day-band th{background:#e4e7ec;text-align:left}.day-subtotal th{background:#f7f8fa}tfoot th{background:#f2f3f5}.money{text-align:right;white-space:nowrap}.report-generated{text-align:right;color:#666;font-size:9px;margin-top:12px}
+  </style></head><body>${report}<script>window.onload=()=>{window.focus();window.print();};<\\/script></body></html>`);
+  w.document.close();
+};
 try { const session = await getSession(); setLoggedIn(session); }
 catch(e) { loginStatus("Supabase connection error: " + e.message); }

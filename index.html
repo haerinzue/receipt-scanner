@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Receipt Scanner</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div class="wrap">
@@ -111,13 +111,29 @@
           <select id="shiftFilter"><option value="">Lahat ng shift</option><option value="S1">Shift 1 · 12 MN–9 AM</option><option value="S2">Shift 2 · 9 AM–9 PM</option><option value="S3">Shift 3 · 9 PM–12 MN</option></select>
         </div>
       </div>
+      <div class="records-tools">
+        <button class="btn primary" id="openReport" type="button">📄 Gumawa ng Overall Report / PDF</button>
+      </div>
       <div id="recordList"><div class="empty">Kinukuha ang records...</div></div>
     </section>
+
+    <dialog id="reportDialog" class="report-dialog">
+      <div class="dialog-top"><div><h2>Overall Receipt Report</h2><p class="small">Pumili ng saklaw ng report bago i-print o i-save bilang PDF.</p></div><button class="btn" id="closeReport" type="button">✕</button></div>
+      <div class="report-form">
+        <div class="field"><label for="reportDateFrom">TRANSACTION DATE FROM</label><input id="reportDateFrom" type="date"></div>
+        <div class="field"><label for="reportDateTo">TRANSACTION DATE TO</label><input id="reportDateTo" type="date"></div>
+        <div class="field"><label for="reportShift">SHIFT</label><select id="reportShift"><option value="">Lahat ng shift</option><option value="S1">Shift 1 · 12 MN–9 AM</option><option value="S2">Shift 2 · 9 AM–9 PM</option><option value="S3">Shift 3 · 9 PM–12 MN</option></select></div>
+        <div class="field"><label for="reportStaff">STAFF</label><select id="reportStaff"><option value="">Lahat ng staff</option><option>ADMIN MARJORIE</option><option>ADMIN BHELL</option><option>ADMIN THEA</option></select></div>
+        <div class="field"><label for="reportMethod">PAYMENT METHOD</label><select id="reportMethod"><option value="">Lahat ng payment methods</option><option>GCash</option><option>Maya</option><option>BPI</option></select></div>
+      </div>
+      <div class="report-actions"><button class="btn" id="previewReport" type="button">I-preview</button><button class="btn primary" id="printReport" type="button">🖨 Print / Save as PDF</button></div>
+      <div id="reportPreview" class="report-preview"><div class="empty">Pumili ng filters at pindutin ang I-preview.</div></div>
+    </dialog>
   </main>
   <p class="small footer">Receipt Scanner · Supabase cloud database</p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

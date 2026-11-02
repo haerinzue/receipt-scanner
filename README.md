@@ -31,3 +31,4 @@ Upload the contents of this folder to the root of the GitHub repository and allo
 ## Supabase safety
 - Keep the publishable key in `js/config.js`; never put a service_role/secret key in frontend code.
 - Keep RLS enabled and review policies before production use.
+\n\n## Receipt management update\nSee `README_REPORT_DELETE_DUPLICATE.txt` and run `RECEIPT_REPORT_DELETE_DUPLICATE_SETUP.sql` before enabling delete and database-level duplicate protection.\n
