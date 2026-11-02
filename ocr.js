@@ -158,6 +158,47 @@ function parseDateTime(text) {
   return {date,time,numericDate};
 }
 
+
+async function readBpiConfirmationCrop(imageData, words) {
+  if (!Array.isArray(words) || !words.length) return [];
+  const marker = words.find(w => /confirm/i.test(w.text || ""));
+  if (!marker || !marker.bbox) return [];
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve; img.onerror = reject; img.src = imageData;
+  });
+  const b = marker.bbox;
+  // Crop the entire confirmation row, not just the word "Confirmation".
+  const y1 = Math.max(0, Math.floor(b.y0 - 24));
+  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + 32));
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = Math.max(1, y2 - y1);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, y1, img.naturalWidth, canvas.height, 0, 0, canvas.width, canvas.height);
+  const enlarged = document.createElement("canvas");
+  const scale = Math.min(4, Math.max(2, 1800 / canvas.width));
+  enlarged.width = Math.round(canvas.width * scale);
+  enlarged.height = Math.round(canvas.height * scale);
+  const ectx = enlarged.getContext("2d");
+  ectx.imageSmoothingEnabled = true;
+  ectx.imageSmoothingQuality = "high";
+  ectx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
+  const crop = enlarged.toDataURL("image/png");
+  const found = [];
+  for (const psm of [7, 8, 13]) {
+    const r = await window.Tesseract.recognize(crop, "eng", {
+      tessedit_pageseg_mode: psm,
+      tessedit_char_whitelist: "0123456789",
+      preserve_interword_spaces: "1"
+    });
+    const digits = String(r.data.text || "").replace(/\D/g, "");
+    const match = digits.match(/\d{10,20}/g) || [];
+    for (const value of match) found.push(value);
+  }
+  return found;
+}
+
 function score(r) {
   return (r.method?8:0)+(r.amount?9:0)+(r.reference?10:0)+(r.date?4:0)+(r.time?3:0)+Math.min(5,(r.text||'').length/140)+(Number(r.confidence)||0)/100;
 }
@@ -184,11 +225,33 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
     const method=detectProvider(text);
     const dt=parseDateTime(text);
     const r={text,method,amount:parseAmount(text,method),reference:parseReference(text,method),date:dt.date,time:dt.time,
-      confidence:Math.round(Number(rec.data.confidence)||0),pass:v.name,numericDate:dt.numericDate};
+      confidence:Math.round(Number(rec.data.confidence)||0),pass:v.name,numericDate:dt.numericDate,words:rec.data.words||[],sourceImage:v.image};
     if(r.date) dateSet.add(r.date); if(r.time) timeSet.add(r.time);
     if(!best||score(r)>score(best)) best=r;
   }
   best.warnings=[];
+  if (best.method === "BPI" && /confirm/i.test(best.text || "")) {
+    try {
+      const cropCandidates = await readBpiConfirmationCrop(best.sourceImage || imageData, best.words);
+      const counts = new Map();
+      for (const candidate of cropCandidates) counts.set(candidate, (counts.get(candidate) || 0) + 1);
+      const ranked = [...counts.entries()].sort((a,b) => b[1]-a[1]);
+      if (ranked.length && ranked[0][1] >= 2 && (ranked.length === 1 || ranked[0][1] > ranked[1][1])) {
+        best.reference = ranked[0][0];
+        best.referenceCheck = "crop-consensus";
+      } else if (ranked.length && best.reference && !counts.has(best.reference)) {
+        best.reference = "";
+        best.referenceCheck = "needs-manual-check";
+        best.warnings.push("Hindi nagtugma ang full-image at close-up OCR para sa BPI Confirmation No. Pakikopya ito nang mano-mano.");
+      } else if (ranked.length > 1) {
+        best.reference = "";
+        best.referenceCheck = "needs-manual-check";
+        best.warnings.push("Magkakaiba ang nabasang BPI Confirmation No. Pakikumpirma sa orihinal na resibo.");
+      }
+    } catch (e) {
+      // Keep the full-image result; never fabricate a corrected reference number.
+    }
+  }
   if(!best.method) best.warnings.push('Hindi matukoy ang payment method; piliin ito nang mano-mano.');
   if(!best.amount) best.warnings.push('Hindi ligtas matukoy ang amount. Pakilagay mula sa mismong resibo.');
   if(!best.reference) best.warnings.push('Hindi ligtas matukoy ang reference number. Pakikopya mula sa mismong resibo.');
@@ -198,5 +261,7 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
   if(timeSet.size>1) { best.time=''; best.warnings.push('Hindi pare-pareho ang oras na nabasa; pakikumpirma sa resibo.'); }
   if(best.numericDate) best.warnings.push('Numeric date format ang nabasa. Pakikumpirma kung tama ang buwan at araw.');
   if(best.confidence<60) best.warnings.push('Mababa ang overall OCR confidence. Gumamit ng malinaw at tuwid na screenshot kung maaari.');
+  delete best.words;
+  delete best.sourceImage;
   return best;
 }
