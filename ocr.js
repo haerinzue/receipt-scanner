@@ -170,17 +170,17 @@ async function readBpiConfirmationCrop(imageData, words) {
   // the 13-digit ID immediately after the label on the same line. Scanning to
   // the right edge of the whole receipt included unrelated text and weakened OCR.
   const markerHeight = Math.max(12, b.y1 - b.y0);
-  // Start AFTER the word "Confirmation" and its short "No." label.
-  // Starting before the label lets OCR mistake a letter/edge of the label
-  // for an extra leading digit (the previous build produced a 14-digit ID
-  // beginning with an erroneous 8).
-  const x1 = Math.max(0, Math.floor(b.x1 + markerHeight * 1.65));
+  // Keep the COMPLETE "Confirmation No. 123..." line in the crop.
+  // Earlier crops started after the label and sometimes clipped the first
+  // digits. The OCR pass below uses a numeric whitelist, so the text label
+  // itself is not supposed to become part of the extracted reference.
+  const x1 = Math.max(0, Math.floor(b.x0 - markerHeight * 0.35));
   const x2 = Math.min(
     img.naturalWidth,
-    Math.ceil(Math.max(x1 + img.naturalWidth * 0.30, b.x1 + img.naturalWidth * 0.42))
+    Math.ceil(Math.max(b.x1 + img.naturalWidth * 0.58, b.x0 + img.naturalWidth * 0.78))
   );
-  const y1 = Math.max(0, Math.floor(b.y0 - markerHeight * 0.28));
-  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + markerHeight * 0.72));
+  const y1 = Math.max(0, Math.floor(b.y0 - markerHeight * 0.55));
+  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + markerHeight * 1.05));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, x2 - x1);
   canvas.height = Math.max(1, y2 - y1);
