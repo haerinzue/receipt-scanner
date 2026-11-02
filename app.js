@@ -121,10 +121,10 @@ $("fileInput").onchange = e => {
 };
 $("readBtn").onclick = async () => {
   if (!imageData) return;
-  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Binabasa ang larawan...");
+  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Sinusuri ang resibo gamit ang Hybrid OCR...");
   try {
     const result = await readReceipt(imageData, (state, progress) => {
-      status(state === "recognizing text" ? "Binabasa ang text..." : state);
+      status(state === "recognizing text" ? "Hybrid OCR: sinusuri ang teksto at mga detalye..." : state);
       $("bar").style.width = Math.max(5,Math.round(progress*100)) + "%";
     });
     // Clear previous OCR-derived values first so an unread field cannot retain
@@ -139,7 +139,7 @@ $("readBtn").onclick = async () => {
     if (result.date) $("txDate").value = result.date;
     if (result.time) $("txTime").value = result.time;
     const filled = [result.method,result.amount,result.reference,result.date,result.time].filter(Boolean).length;
-    status(`Tapos ang 5-pass OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
+    status(`Tapos ang Hybrid OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field. Para sa BPI reference, may dagdag na OCRAD cross-check kung available.`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };

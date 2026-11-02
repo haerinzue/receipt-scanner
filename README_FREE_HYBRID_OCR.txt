@@ -8,3 +8,9 @@ FREE HYBRID OCR TEST BUILD
 - Keep cashier review and verify payment in the provider's account. OCR output is not proof of payment.
 
 This build preserves the existing login, staff/shift selection, Supabase database/storage, and receipt history files from the strict-reference safety build.
+
+
+UI LABEL UPDATE:
+- Button: Basahin gamit ang Hybrid OCR
+- Status: Tapos ang Hybrid OCR
+- Note: Tesseract ang pangunahing multi-pass OCR; OCRAD ay dagdag na cross-check para sa BPI confirmation reference kung available. Hindi ito garantiya ng 100% accuracy.
