@@ -286,27 +286,31 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
         ocrad: cropRead.ocradRef || "",
         ocradLoaded: !!window.OCRAD
       };
-      // Prefer agreement from the targeted confirmation-line crop.
-      // Full-image OCR can confuse a single digit because the receipt is small,
-      // angled, or photographed from another phone. When close-up Tesseract
-      // and the independent OCRAD engine agree exactly, use that value even
-      // if the full-image pass disagrees. If the close-up engines disagree,
-      // leave the field blank rather than guessing.
-      const closeupEnginesAgree = !!cropWinner && !!cropRead.ocradRef &&
-        cropWinner === cropRead.ocradRef;
-      if (closeupEnginesAgree) {
+      // The targeted confirmation-line crop is the primary source for the ID.
+      // Accept a strict majority across the three independent Tesseract page
+      // segmentation passes. OCRAD is an auxiliary cross-check, not a veto:
+      // it can miss thin digits in photos of another phone screen.
+      if (cropWinner) {
         best.reference = cropWinner;
-        best.referenceCheck = best.reference === cropWinner && best.reference === cropRead.ocradRef
-          ? "closeup-engines-agree"
-          : "closeup-engines-agree";
+        best.referenceCheck = "closeup-tesseract-majority";
+        if (cropRead.ocradRef && cropRead.ocradRef !== cropWinner) {
+          best.warnings.push("May pagkakaiba ang OCRAD at close-up Tesseract. Ginamit ang numerong may majority sa close-up Tesseract; pakitingnan ang reference sa orihinal na resibo.");
+        } else if (!cropRead.ocradRef) {
+          best.warnings.push("Walang malinaw na OCRAD cross-check. Ginamit ang majority reading ng close-up Tesseract; pakitingnan ang reference sa orihinal na resibo.");
+        }
         if (best.referenceDiagnostics.fullImageTesseract &&
             best.referenceDiagnostics.fullImageTesseract !== cropWinner) {
-          best.warnings.push("Magkaiba ang full-image OCR at close-up OCR. Ginamit ang reference na magkaparehong nabasa ng close-up Tesseract at OCRAD; pakitingnan pa rin ang numerong nasa orihinal na resibo.");
+          best.warnings.push("Iba ang full-image OCR. Mas binigyan ng bigat ang close-up Tesseract majority dahil nakatutok ito sa Confirmation No.");
         }
+      } else if (cropRead.ocradRef && cropRead.tesseractCandidates.includes(cropRead.ocradRef)) {
+        // If Tesseract has no strict majority, accept only an exact match
+        // between at least one targeted Tesseract pass and OCRAD.
+        best.reference = cropRead.ocradRef;
+        best.referenceCheck = "closeup-cross-engine-match";
       } else {
         best.reference = "";
         best.referenceCheck = "needs-manual-check";
-        best.warnings.push("Hindi nagkakaisa ang close-up Tesseract at OCRAD sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikopya mula sa orihinal na resibo.");
+        best.warnings.push("Walang sapat na pagkakatugma sa close-up OCR para sa BPI Confirmation No. Iniwan itong blanko sa halip na manghula.");
       }
     } catch (e) {
       best.reference = "";
