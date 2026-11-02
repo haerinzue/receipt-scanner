@@ -50,47 +50,83 @@ function detectProvider(text) {
 
 function parseAmount(text, provider) {
   const lines = linesOf(text);
-  const anchors = [
-    /total\s*(?:amount|payment)/i, /amount\s*(?:sent|paid|transferred)/i,
-    /transaction\s*amount/i, /transfer\s*amount/i, /^amount\b/i,
-    ...(provider === 'Maya' ? [/sent\s*money/i] : [])
+  const moneyToken = /(?:PHP|₱|P\s*|[£$])\s*([0-9][0-9,]*(?:\.\d{1,2})?)|([0-9][0-9,]*(?:\.\d{1,2})?)\s*(?:PHP|₱)/i;
+  const numericToken = /(?:₱|PHP|P\s*)?\s*([0-9][0-9,]*\.\d{2})\b/i;
+  const labelRules = [
+    /total\s*amount\s*sent/i,
+    /total\s*(?:amount|payment)/i,
+    /amount\s*(?:sent|paid|transferred)/i,
+    /transaction\s*amount/i,
+    /transfer\s*amount/i,
+    /^amount\b/i
   ];
-  const moneyRe = /(?:PHP|₱|P\s*)\s*([0-9][0-9,]*\.\d{2})|([0-9][0-9,]*\.\d{2})\s*(?:PHP|₱)/i;
-  for (let i=0;i<lines.length;i++) {
-    if (anchors.some(r=>r.test(lines[i]))) {
-      for (let j=i;j<=Math.min(i+2,lines.length-1);j++) {
-        const m=lines[j].match(moneyRe);
-        if(m) return (m[1]||m[2]).replace(/,/g,'');
+
+  // Prefer explicit "Total Amount Sent" / transaction amount labels.
+  // GCash screenshots often OCR the peso sign incorrectly or omit it.
+  const candidates = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const priority = labelRules.findIndex(r => r.test(line));
+    if (priority < 0) continue;
+    const nearby = [line, lines[i + 1] || "", lines[i + 2] || ""].join(" ");
+    const currency = nearby.match(moneyToken);
+    const numeric = nearby.match(numericToken);
+    const raw = currency ? (currency[1] || currency[2]) : numeric?.[1];
+    if (raw) {
+      const value = Number(raw.replace(/,/g, ""));
+      if (Number.isFinite(value) && value > 0 && value < 100000000) {
+        candidates.push({ value, priority, distance: i });
       }
     }
   }
-  // Conservative fallback: currency-marked amount only, not arbitrary numbers.
-  const marked=[...norm(text).matchAll(/(?:PHP|₱)\s*([0-9][0-9,]*\.\d{2})/gi)];
-  return marked.length ? marked[0][1].replace(/,/g,'') : '';
-}
+  if (candidates.length) {
+    candidates.sort((a,b) => a.priority-b.priority || a.distance-b.distance);
+    return candidates[0].value.toFixed(2);
+  }
 
+  // Fallback only to a clearly currency-marked value; avoid arbitrary IDs/dates.
+  const marked = [...norm(text).matchAll(/(?:PHP|₱|P\s*|[£$])\s*([0-9][0-9,]*(?:\.\d{1,2})?)/gi)];
+  for (const m of marked) {
+    const value = Number(m[1].replace(/,/g, ""));
+    if (Number.isFinite(value) && value > 0 && value < 100000000) return value.toFixed(2);
+  }
+  return "";
+}
 function parseReference(text, provider) {
-  const lines=linesOf(text);
-  const label=/reference\s*(?:number|no\.?|#|id)?|ref(?:erence)?\s*(?:no\.?|#|id)|transaction\s*(?:number|no\.?|#|id)|trace\s*(?:number|no\.?|#)|confirmation\s*(?:number|no\.?|#)/i;
-  for(let i=0;i<lines.length;i++) {
-    if(!label.test(lines[i])) continue;
-    let tail=lines[i].replace(/^.*?(?:reference\s*(?:number|no\.?|#|id)?|ref(?:erence)?\s*(?:no\.?|#|id)|transaction\s*(?:number|no\.?|#|id)|trace\s*(?:number|no\.?|#)|confirmation\s*(?:number|no\.?|#))\s*[:#-]?\s*/i,'');
-    let candidates=[tail,lines[i+1]||''];
-    for(let candidate of candidates) {
-      candidate=candidate.replace(/\b(?:date|time|amount|paid|sent)\b/ig,'').trim();
-      const tokens=candidate.match(/[A-Z0-9][A-Z0-9 -]{4,39}/ig)||[];
-      for(let token of tokens) {
-        let value=token.replace(/[^A-Z0-9]/gi,'').toUpperCase();
-        if(provider==='Maya' && /^[A-Z0-9]{6,40}$/.test(value)) return value;
-        if((provider==='GCash'||provider==='BPI') && /^\d{6,30}$/.test(value)) return value;
-        // Provider unknown: allow only long numeric IDs, never guess a short fragment.
-        if(!provider && /^\d{8,30}$/.test(value)) return value;
+  const lines = linesOf(text);
+  const label = /\b(?:reference\s*(?:number|no\.?|#|id)?|ref(?:erence)?\s*(?:no\.?|#|id)|transaction\s*(?:number|no\.?|#|id)|trace\s*(?:number|no\.?|#)|confirmation\s*(?:number|no\.?|#))(?=\s|[:#.-]|$)/i;
+  const cleanRef = value => {
+    let v = String(value || "")
+      .replace(/\b(?:date|time|amount|paid|sent|total|nov|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|dec)\b/ig, " ")
+      .replace(/[^A-Z0-9]/gi, "")
+      .toUpperCase();
+    // OCR can add a trailing punctuation mark, but do not silently invent digits.
+    if (provider === "GCash" || provider === "BPI") return /^\d{6,30}$/.test(v) ? v : "";
+    if (provider === "Maya") return /^[A-Z0-9]{6,40}$/.test(v) ? v : "";
+    return /^\d{8,30}$/.test(v) ? v : "";
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!label.test(lines[i])) continue;
+    const tail = lines[i].replace(/^.*?\b(?:reference\s*(?:number|no\.?|#|id)?|ref(?:erence)?\s*(?:no\.?|#|id)|transaction\s*(?:number|no\.?|#|id)|trace\s*(?:number|no\.?|#)|confirmation\s*(?:number|no\.?|#))\s*[:#.-]?\s*/i, "");
+    // First try the remainder of the same line, then the next line.
+    for (const candidate of [tail, lines[i + 1] || ""]) {
+      const tokens = candidate.match(/[A-Z0-9][A-Z0-9 -]{5,39}/ig) || [];
+      for (const token of tokens) {
+        const ref = cleanRef(token);
+        if (ref) return ref;
       }
+      const compact = cleanRef(candidate);
+      if (compact) return compact;
     }
   }
-  return '';
-}
 
+  // GCash commonly prints "Ref No." followed by a long numeric transaction ID.
+  // This fallback still requires a nearby explicit reference label.
+  const gcashRef = norm(text).match(/\bref(?:erence)?\s*(?:no\.?|number|#)?\s*[:.-]?\s*([0-9][0-9\s-]{5,35})/i);
+  if (gcashRef) return cleanRef(gcashRef[1]);
+  return "";
+}
 function parseDateTime(text) {
   const s=norm(text);
   let date='', time='';
