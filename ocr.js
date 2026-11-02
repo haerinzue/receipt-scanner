@@ -252,17 +252,7 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
     {name:'Soft contrast',image:await preprocess(imageData,'soft'),psm:11},
     {name:'Black and white',image:await preprocess(imageData,'threshold'),psm:11}
   ];
-  let best=null;
-  // Collect field-level candidates from every image variant instead of trusting
-  // one globally 'best' OCR pass. Different fields often read best on different variants.
-  const fieldVotes = { method:new Map(), amount:new Map(), reference:new Map(), date:new Map(), time:new Map() };
-  const addVote = (field, value, confidence) => {
-    if (!value) return;
-    const key = String(value);
-    const current = fieldVotes[field].get(key) || { count:0, confidence:0 };
-    current.count += 1; current.confidence += Math.max(0, Number(confidence) || 0);
-    fieldVotes[field].set(key, current);
-  };
+  let best=null; const dateSet=new Set(),timeSet=new Set();
   for(let i=0;i<variants.length;i++) {
     const v=variants[i];
     onProgress(`OCR ${i+1}/${variants.length}: ${v.name}`,i/variants.length);
@@ -276,30 +266,10 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
     const dt=parseDateTime(text);
     const r={text,method,amount:parseAmount(text,method),reference:parseReference(text,method),date:dt.date,time:dt.time,
       confidence:Math.round(Number(rec.data.confidence)||0),pass:v.name,numericDate:dt.numericDate,words:rec.data.words||[],sourceImage:v.image};
-    for (const field of ['method','amount','reference','date','time']) addVote(field, r[field], r.confidence);
+    if(r.date) dateSet.add(r.date); if(r.time) timeSet.add(r.time);
     if(!best||score(r)>score(best)) best=r;
   }
   best.warnings=[];
-  // Resolve each field independently. A repeated result across differently
-  // enhanced versions is more dependable than a single pass winning by score.
-  const chooseField = field => {
-    const ranked = [...fieldVotes[field].entries()].sort((a,b) =>
-      b[1].count - a[1].count || b[1].confidence - a[1].confidence
-    );
-    if (!ranked.length) return '';
-    // Require a repeated read when competing values exist; otherwise retain the
-    // sole candidate so clean screenshots still auto-fill all available fields.
-    if (ranked.length > 1 && ranked[0][1].count < 2) return '';
-    return ranked[0][0];
-  };
-  const fieldConflicts = {};
-  for (const field of ['method','amount','reference','date','time']) {
-    const values = [...fieldVotes[field].keys()];
-    fieldConflicts[field] = values.length > 1;
-    const selected = chooseField(field);
-    if (selected) best[field] = selected;
-    else if (values.length > 1) best[field] = '';
-  }
   best.ocrEngines = window.OCRAD ? ["Tesseract.js", "OCRAD.js"] : ["Tesseract.js"];
   if (best.method === "BPI" && /confirm/i.test(best.text || "")) {
     try {
@@ -316,19 +286,27 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
         ocrad: cropRead.ocradRef || "",
         ocradLoaded: !!window.OCRAD
       };
-      // For BPI, prioritize the targeted Confirmation No. crop. Accept it when
-      // at least two Tesseract segmentation passes agree AND independent OCRAD
-      // agrees. The full-image read is diagnostic only because it may mix in
-      // nearby digits from other receipt lines.
-      const cropAndIndependentAgree = !!cropWinner && !!cropRead.ocradRef &&
+      // Prefer agreement from the targeted confirmation-line crop.
+      // Full-image OCR can confuse a single digit because the receipt is small,
+      // angled, or photographed from another phone. When close-up Tesseract
+      // and the independent OCRAD engine agree exactly, use that value even
+      // if the full-image pass disagrees. If the close-up engines disagree,
+      // leave the field blank rather than guessing.
+      const closeupEnginesAgree = !!cropWinner && !!cropRead.ocradRef &&
         cropWinner === cropRead.ocradRef;
-      if (cropAndIndependentAgree) {
+      if (closeupEnginesAgree) {
         best.reference = cropWinner;
-        best.referenceCheck = "crop-and-ocrad-agree";
+        best.referenceCheck = best.reference === cropWinner && best.reference === cropRead.ocradRef
+          ? "closeup-engines-agree"
+          : "closeup-engines-agree";
+        if (best.referenceDiagnostics.fullImageTesseract &&
+            best.referenceDiagnostics.fullImageTesseract !== cropWinner) {
+          best.warnings.push("Magkaiba ang full-image OCR at close-up OCR. Ginamit ang reference na magkaparehong nabasa ng close-up Tesseract at OCRAD; pakitingnan pa rin ang numerong nasa orihinal na resibo.");
+        }
       } else {
         best.reference = "";
         best.referenceCheck = "needs-manual-check";
-        best.warnings.push("Hindi nagkakaisa ang close-up Tesseract at OCRAD sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikumpirma sa resibo.");
+        best.warnings.push("Hindi nagkakaisa ang close-up Tesseract at OCRAD sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikopya mula sa orihinal na resibo.");
       }
     } catch (e) {
       best.reference = "";
@@ -342,10 +320,8 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
   if(!best.reference) best.warnings.push('Hindi ligtas matukoy ang reference number. Pakikopya mula sa mismong resibo.');
   if(!best.date) best.warnings.push('Hindi mabasa nang malinaw ang transaction date.');
   if(!best.time) best.warnings.push('Hindi mabasa nang malinaw ang transaction time.');
-  if(fieldConflicts.date && !best.date) best.warnings.push('Magkakaiba ang petsang nabasa sa OCR attempts; iniwang blanko para maiwasan ang maling date.');
-  if(fieldConflicts.time && !best.time) best.warnings.push('Magkakaiba ang oras na nabasa sa OCR attempts; iniwang blanko para maiwasan ang maling time.');
-  if(fieldConflicts.amount && !best.amount) best.warnings.push('Magkakaiba ang amount na nabasa sa OCR attempts; iniwang blanko para maiwasan ang maling halaga.');
-  if(fieldConflicts.reference && !best.reference && best.method !== 'BPI') best.warnings.push('Magkakaiba ang reference number na nabasa sa OCR attempts; iniwang blanko para maiwasan ang maling numero.');
+  if(dateSet.size>1) { best.date=''; best.warnings.push('Hindi pare-pareho ang petsang nabasa sa OCR attempts; pakikumpirma sa resibo.'); }
+  if(timeSet.size>1) { best.time=''; best.warnings.push('Hindi pare-pareho ang oras na nabasa; pakikumpirma sa resibo.'); }
   if(best.numericDate) best.warnings.push('Numeric date format ang nabasa. Pakikumpirma kung tama ang buwan at araw.');
   if(best.confidence<60) best.warnings.push('Mababa ang overall OCR confidence. Gumamit ng malinaw at tuwid na screenshot kung maaari.');
   delete best.words;
