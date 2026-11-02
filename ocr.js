@@ -170,10 +170,14 @@ async function readBpiConfirmationCrop(imageData, words) {
   // the 13-digit ID immediately after the label on the same line. Scanning to
   // the right edge of the whole receipt included unrelated text and weakened OCR.
   const markerHeight = Math.max(12, b.y1 - b.y0);
-  const x1 = Math.max(0, Math.floor(b.x0 - 6));
+  // Start AFTER the word "Confirmation" and its short "No." label.
+  // Starting before the label lets OCR mistake a letter/edge of the label
+  // for an extra leading digit (the previous build produced a 14-digit ID
+  // beginning with an erroneous 8).
+  const x1 = Math.max(0, Math.floor(b.x1 + markerHeight * 1.65));
   const x2 = Math.min(
     img.naturalWidth,
-    Math.ceil(Math.max(b.x1 + img.naturalWidth * 0.34, b.x0 + img.naturalWidth * 0.52))
+    Math.ceil(Math.max(x1 + img.naturalWidth * 0.30, b.x1 + img.naturalWidth * 0.42))
   );
   const y1 = Math.max(0, Math.floor(b.y0 - markerHeight * 0.28));
   const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + markerHeight * 0.72));
@@ -222,8 +226,8 @@ async function readBpiConfirmationCrop(imageData, words) {
       mctx.putImageData(mp, 0, 0);
       ocradText = String(window.OCRAD(mono, { numeric: true }) || '').trim();
       const digits = ocradText.replace(/\D/g, '');
-      const matches = digits.match(/\d{10,20}/g) || [];
-      ocradRef = matches.find(v => v.length === 13) || matches[0] || '';
+      const matches = digits.match(/\d{13}/g) || [];
+      ocradRef = matches[0] || '';
     } catch (e) { ocradText = ''; ocradRef = ''; }
   }
   for (const psm of [7, 8, 13]) {
@@ -233,7 +237,9 @@ async function readBpiConfirmationCrop(imageData, words) {
       preserve_interword_spaces: '1'
     });
     const digits = String(r.data.text || '').replace(/\D/g, '');
-    const matches = digits.match(/\d{10,20}/g) || [];
+    // This BPI confirmation format is 13 digits. Reject 14+ digit strings
+    // rather than accidentally accepting a spurious leading character.
+    const matches = digits.match(/\d{13}/g) || [];
     tesseractCandidates.push(...matches);
   }
   return { tesseractCandidates, ocradText, ocradRef };
