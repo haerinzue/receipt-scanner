@@ -28,6 +28,8 @@ export async function saveReceipt(record, imageFile) {
     transaction_time: record.txTime || null,
     receipt_image_path: imagePath,
     ocr_raw_text: record.rawText || null,
+    staff_name: record.staffName,
+    shift_code: record.shiftCode,
     created_by: authData.user.id
   };
   const { data, error } = await supabase.from("receipts").insert(row).select().single();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Receipt Scanner</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div class="wrap">
@@ -66,6 +66,22 @@
           <div class="field full"><label for="reference">REFERENCE NUMBER</label><input id="reference" placeholder="Reference / Transaction ID"></div>
           <div class="field"><label for="txDate">TRANSACTION DATE</label><input id="txDate" type="date"></div>
           <div class="field"><label for="txTime">TRANSACTION TIME</label><input id="txTime" type="time"></div>
+          <div class="field"><label for="staffName">STAFF</label>
+            <select id="staffName" required>
+              <option value="">Piliin ang staff</option>
+              <option>ADMIN MARJORIE</option>
+              <option>ADMIN BHELL</option>
+              <option>ADMIN THEA</option>
+            </select>
+          </div>
+          <div class="field"><label for="shiftCode">SHIFT</label>
+            <select id="shiftCode" required>
+              <option value="">Piliin ang shift</option>
+              <option value="S1">Shift 1 · 12:00 MN – 9:00 AM</option>
+              <option value="S2">Shift 2 · 9:00 AM – 9:00 PM</option>
+              <option value="S3">Shift 3 · 9:00 PM – 12:00 MN</option>
+            </select>
+          </div>
           <div class="field full"><label for="rawText">OCR RAW TEXT (pang-review; maaaring may maling basa)</label><textarea id="rawText" rows="5" placeholder="Lalabas dito ang tekstong nabasa ng OCR..."></textarea></div>
         </div>
         <div class="notice hidden" id="duplicateNotice"></div>
@@ -79,6 +95,14 @@
 
     <section class="card records">
       <div class="record-heading"><h2>3. Mga na-save na resibo</h2><input id="search" class="search" placeholder="Hanapin ang reference / method"></div>
+      <div class="fields record-filters" style="margin-top:12px">
+        <div class="field"><label for="staffFilter">FILTER STAFF</label>
+          <select id="staffFilter"><option value="">Lahat ng staff</option><option>ADMIN MARJORIE</option><option>ADMIN BHELL</option><option>ADMIN THEA</option></select>
+        </div>
+        <div class="field"><label for="shiftFilter">FILTER SHIFT</label>
+          <select id="shiftFilter"><option value="">Lahat ng shift</option><option value="S1">Shift 1 · 12 MN–9 AM</option><option value="S2">Shift 2 · 9 AM–9 PM</option><option value="S3">Shift 3 · 9 PM–12 MN</option></select>
+        </div>
+      </div>
       <div id="recordList"><div class="empty">Kinukuha ang records...</div></div>
     </section>
   </main>
@@ -87,6 +111,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -33,7 +33,11 @@ function stopCamera() {
 }
 async function refresh() {
   try {
-    const records = await getReceipts($("search").value);
+    let records = await getReceipts($("search").value);
+    const staffFilter = $("staffFilter")?.value || "";
+    const shiftFilter = $("shiftFilter")?.value || "";
+    if (staffFilter) records = records.filter(r => r.staff_name === staffFilter);
+    if (shiftFilter) records = records.filter(r => r.shift_code === shiftFilter);
     const box = $("recordList"); box.innerHTML = "";
     if (!records.length) { box.innerHTML = '<div class="empty">Wala pang tugmang records.</div>'; return; }
     for (const r of records) {
@@ -42,8 +46,11 @@ async function refresh() {
       const strong = document.createElement("strong"); strong.textContent = `${r.payment_method} · ₱${Number(r.amount).toLocaleString("en-PH",{minimumFractionDigits:2})}`;
       const meta = document.createElement("div"); meta.className = "meta";
       meta.textContent = `Ref: ${r.reference_number} · Transaction: ${r.transaction_date || "—"} ${r.transaction_time || ""}`;
+      const assignment = document.createElement("div"); assignment.className = "meta";
+      const shiftNames = { S1: "Shift 1 · 12 MN–9 AM", S2: "Shift 2 · 9 AM–9 PM", S3: "Shift 3 · 9 PM–12 MN" };
+      assignment.textContent = `Staff: ${r.staff_name || "Hindi nakatalaga"} · ${shiftNames[r.shift_code] || "Walang shift"}`;
       const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = `Saved ${new Date(r.created_at).toLocaleString()}`;
-      left.append(strong, meta, tag);
+      left.append(strong, meta, assignment, tag);
       const right = document.createElement("div"); const view = document.createElement("button");
       view.className = "btn"; view.textContent = "Tingnan";
       view.onclick = async () => { try { const url = await getReceiptImageUrl(r.receipt_image_path); window.open(url, "_blank", "noopener"); } catch(e) { alert("Hindi mabuksan ang image: " + e.message); } };
@@ -107,9 +114,13 @@ $("saveBtn").onclick = async () => {
   if (!imageBlob) return status("Kailangan munang pumili o kumuha ng receipt image.");
   if (!["GCash","Maya","BPI"].includes(method)) return status("Piliin ang GCash, Maya o BPI.");
   if (!reference || !amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return status("Maglagay ng wastong Reference Number at Amount.");
+  const staffName = $("staffName").value;
+  const shiftCode = $("shiftCode").value;
+  if (!staffName) return status("Piliin muna ang staff.");
+  if (!shiftCode) return status("Piliin muna ang shift.");
   $("saveBtn").disabled = true; status("Sine-save ang image at record sa Supabase...");
   try {
-    await saveReceipt({ method, reference, amount, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value }, imageBlob);
+    await saveReceipt({ method, reference, amount, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value, staffName, shiftCode }, imageBlob);
     status("Matagumpay na na-save sa Supabase!"); $("duplicateNotice").classList.add("hidden"); await refresh();
   } catch(e) { status("Hindi na-save: " + e.message); }
   finally { $("saveBtn").disabled = false; }
@@ -122,6 +133,8 @@ $("clearBtn").onclick = () => {
 };
 $("resetFields").onclick = () => ["method","amount","reference","txDate","txTime","rawText"].forEach(id => $(id).value = "");
 $("search").oninput = refresh;
+$("staffFilter").onchange = refresh;
+$("shiftFilter").onchange = refresh;
 
 try { const session = await getSession(); setLoggedIn(session); }
 catch(e) { loginStatus("Supabase connection error: " + e.message); }
