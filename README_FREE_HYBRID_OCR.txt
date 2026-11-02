@@ -1,0 +1,10 @@
+FREE HYBRID OCR TEST BUILD
+
+- Tesseract.js remains the primary OCR engine and runs in the browser.
+- OCRAD.js is added as a second independent browser-side OCR engine.
+- Both run locally in the user's browser; receipt images are not sent to a paid OCR API.
+- BPI confirmation number remains conservative: the app only autofills when the existing Tesseract full-image/crop checks agree and the independent OCR check does not conflict. Otherwise it leaves the field blank for manual confirmation.
+- OCRAD.js is an experimental secondary check and may be less accurate than Tesseract. It is not guaranteed to improve recognition. Test with real GCash, Maya and BPI screenshots before using in production.
+- Keep cashier review and verify payment in the provider's account. OCR output is not proof of payment.
+
+This build preserves the existing login, staff/shift selection, Supabase database/storage, and receipt history files from the strict-reference safety build.

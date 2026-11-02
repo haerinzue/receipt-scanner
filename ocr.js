@@ -186,6 +186,24 @@ async function readBpiConfirmationCrop(imageData, words) {
   ectx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
   const crop = enlarged.toDataURL("image/png");
   const found = [];
+  let independentRef = "";
+  // Independent local OCR engine (OCRAD.js). It runs in the browser and
+  // does not upload receipt images. Its output is a safety cross-check only.
+  let independent = "";
+  if (window.OCRAD) {
+    try {
+      const ocradCanvas = document.createElement("canvas");
+      ocradCanvas.width = enlarged.width;
+      ocradCanvas.height = enlarged.height;
+      const octx = ocradCanvas.getContext("2d");
+      octx.drawImage(enlarged, 0, 0);
+      independent = String(window.OCRAD(ocradCanvas, { numeric: true }) || "");
+      const digits = independent.replace(/\D/g, "");
+      const matches = digits.match(/\d{10,20}/g) || [];
+      independentRef = matches[0] || "";
+      for (const value of matches) found.push(value);
+    } catch (e) { /* OCRAD is optional; Tesseract remains the primary OCR. */ }
+  }
   for (const psm of [7, 8, 13]) {
     const r = await window.Tesseract.recognize(crop, "eng", {
       tessedit_pageseg_mode: psm,
@@ -196,7 +214,7 @@ async function readBpiConfirmationCrop(imageData, words) {
     const match = digits.match(/\d{10,20}/g) || [];
     for (const value of match) found.push(value);
   }
-  return found;
+  return { candidates: found, independentRef };
 }
 
 function score(r) {
@@ -230,18 +248,25 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
     if(!best||score(r)>score(best)) best=r;
   }
   best.warnings=[];
+  best.ocrEngines = window.OCRAD ? ["Tesseract.js", "OCRAD.js"] : ["Tesseract.js"];
   if (best.method === "BPI" && /confirm/i.test(best.text || "")) {
     try {
-      const cropCandidates = await readBpiConfirmationCrop(best.sourceImage || imageData, best.words);
+      const cropRead = await readBpiConfirmationCrop(best.sourceImage || imageData, best.words);
+      const cropCandidates = cropRead.candidates;
       const counts = new Map();
-      for (const candidate of cropCandidates) counts.set(candidate, (counts.get(candidate) || 0) + 1);
+      // Count only Tesseract's three targeted segmentation passes for majority.
+      for (const candidate of cropCandidates.slice(cropRead.independentRef ? 1 : 0)) counts.set(candidate, (counts.get(candidate) || 0) + 1);
       const ranked = [...counts.entries()].sort((a,b) => b[1]-a[1]);
       // Never let the crop OCR overwrite the full-image reference.
       // The previous approach accepted a crop majority even when it contained
       // extra digits (e.g. "208" + the actual confirmation number).
       const cropWinner = ranked.length && ranked[0][1] >= 2 &&
         (ranked.length === 1 || ranked[0][1] > ranked[1][1]) ? ranked[0][0] : "";
-      if (best.reference && cropWinner && cropWinner === best.reference) {
+      // OCRAD contributes one independent vote. If it detects a complete
+      // reference that conflicts with the Tesseract result, require manual entry.
+      const independentConflict = cropRead.independentRef && best.reference &&
+        cropRead.independentRef !== best.reference;
+      if (best.reference && cropWinner && cropWinner === best.reference && !independentConflict) {
         best.referenceCheck = "full-and-crop-agree";
       } else {
         best.reference = "";
