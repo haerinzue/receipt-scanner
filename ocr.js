@@ -236,17 +236,17 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
       const counts = new Map();
       for (const candidate of cropCandidates) counts.set(candidate, (counts.get(candidate) || 0) + 1);
       const ranked = [...counts.entries()].sort((a,b) => b[1]-a[1]);
-      if (ranked.length && ranked[0][1] >= 2 && (ranked.length === 1 || ranked[0][1] > ranked[1][1])) {
-        best.reference = ranked[0][0];
-        best.referenceCheck = "crop-consensus";
-      } else if (ranked.length && best.reference && !counts.has(best.reference)) {
+      // Never let the crop OCR overwrite the full-image reference.
+      // The previous approach accepted a crop majority even when it contained
+      // extra digits (e.g. "208" + the actual confirmation number).
+      const cropWinner = ranked.length && ranked[0][1] >= 2 &&
+        (ranked.length === 1 || ranked[0][1] > ranked[1][1]) ? ranked[0][0] : "";
+      if (best.reference && cropWinner && cropWinner === best.reference) {
+        best.referenceCheck = "full-and-crop-agree";
+      } else {
         best.reference = "";
         best.referenceCheck = "needs-manual-check";
-        best.warnings.push("Hindi nagtugma ang full-image at close-up OCR para sa BPI Confirmation No. Pakikopya ito nang mano-mano.");
-      } else if (ranked.length > 1) {
-        best.reference = "";
-        best.referenceCheck = "needs-manual-check";
-        best.warnings.push("Magkakaiba ang nabasang BPI Confirmation No. Pakikumpirma sa orihinal na resibo.");
+        best.warnings.push("Hindi eksaktong nagtugma ang buong resibo at close-up OCR para sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikopya ito mula sa orihinal na resibo.");
       }
     } catch (e) {
       // Keep the full-image result; never fabricate a corrected reference number.
