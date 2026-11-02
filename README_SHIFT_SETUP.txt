@@ -1,25 +1,24 @@
-# Receipt Scanner – Staff & Shift choices
+# Receipt Scanner – Admin/Shift selection screen
 
-## What changed
-- Added a Staff dropdown: ADMIN MARJORIE, ADMIN BHELL, ADMIN THEA.
-- Added a Shift dropdown:
-  - S1: 12:00 midnight–9:00 AM
-  - S2: 9:00 AM–9:00 PM
-  - S3: 9:00 PM–12:00 midnight
-- Saving requires both selections.
-- Saved receipts display the selected staff and shift.
-- Section 3 has filters for staff and shift.
-- The selected staff and shift are saved with each receipt. This is a manual selection, not tied to the signed-in email yet.
+## New behavior
+1. User first logs in with the existing Supabase account.
+2. Before the scanner appears, a screen asks the user to choose:
+   - ADMIN MARJORIE / ADMIN BHELL / ADMIN THEA
+   - Shift 1 (12 MN–9 AM), Shift 2 (9 AM–9 PM), or Shift 3 (9 PM–12 MN)
+3. The scanner opens only after both choices are selected.
+4. Every receipt saved in that session is stored with the selected staff name and shift.
+5. The top bar shows the active admin/shift. "Palitan Admin / Shift" returns to the selection screen.
+6. Section 3 can filter saved receipts by staff and by shift.
 
-## Setup
-1. Back up or keep a copy of your current GitHub Pages project.
-2. In Supabase, open SQL Editor.
-3. Open `SHIFT_SETUP.sql`, copy all SQL, paste it into SQL Editor, and click Run.
-4. Replace the files in your GitHub Pages repository with the files in this ZIP (keep folder structure).
-5. Reload the website. If old page files remain cached, hard refresh with Ctrl+F5.
+## Supabase setup (one-time)
+1. Open Supabase > SQL Editor.
+2. Open `SHIFT_SETUP.sql` from this folder.
+3. Copy all SQL, paste it into SQL Editor, and click Run.
 
-## Notes
-- Existing receipts remain in the database. Old records will show "Hindi nakatalaga" / "Walang shift" because no staff/shift was saved for them.
-- You can still choose any staff and any shift for each receipt.
-- This version does not create Supabase login accounts. It records the staff name selected by the logged-in user.
-- Do not put Supabase service-role or secret keys in the website.
+## Deploy
+Replace the contents of the existing GitHub Pages project with the contents of this ZIP, preserving the `js` and `css` folders. Then hard-refresh the website (Ctrl+F5).
+
+## Important clarification
+The staff choice is an operational label attached to each receipt; it is not a separate Supabase login account or secure proof of which person is operating the device. The existing Supabase login remains the account used for authentication. If you need each admin's identity enforced, create separate Supabase Auth accounts and map each login to a permitted staff/shift on the server side.
+
+Existing receipts remain intact. Old records without staff/shift values display as unassigned.

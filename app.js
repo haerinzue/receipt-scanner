@@ -4,14 +4,22 @@ import { saveReceipt, getReceipts, getReceiptImageUrl } from "./database.js";
 
 const $ = id => document.getElementById(id);
 let imageData = null, imageBlob = null, stream = null;
+let activeStaff = "", activeShift = "";
+const shiftLabels = { S1: "Shift 1 · 12 MN–9 AM", S2: "Shift 2 · 9 AM–9 PM", S3: "Shift 3 · 9 PM–12 MN" };
 
 function status(message) { $("status").textContent = message; }
 function loginStatus(message) { $("loginStatus").textContent = message; }
+function showSelection() {
+  $("loginPanel").classList.add("hidden");
+  $("staffShiftPanel").classList.remove("hidden");
+  $("appPanel").classList.add("hidden");
+}
 function setLoggedIn(session) {
   $("loginPanel").classList.toggle("hidden", !!session);
-  $("appPanel").classList.toggle("hidden", !session);
+  $("staffShiftPanel").classList.toggle("hidden", !session);
+  $("appPanel").classList.add("hidden");
   $("userEmail").textContent = session?.user?.email || "";
-  if (session) refresh();
+  if (session) showSelection();
 }
 function dataUrlToBlob(dataUrl) {
   const [head, body] = dataUrl.split(",");
@@ -60,12 +68,35 @@ async function refresh() {
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+$("staffShiftForm").addEventListener("submit", e => {
+  e.preventDefault();
+  activeStaff = $("sessionStaff").value;
+  activeShift = $("sessionShift").value;
+  if (!activeStaff || !activeShift) {
+    $("selectionStatus").textContent = "Piliin ang admin at shift.";
+    return;
+  }
+  $("activeStaffShift").textContent = `${activeStaff} · ${shiftLabels[activeShift]}`;
+  $("staffShiftPanel").classList.add("hidden");
+  $("appPanel").classList.remove("hidden");
+  refresh();
+});
+$("changeStaffShift").onclick = () => {
+  $("sessionStaff").value = activeStaff;
+  $("sessionShift").value = activeShift;
+  showSelection();
+};
+$("selectionLogoutBtn").onclick = async () => {
+  try { await signOut(); activeStaff = ""; activeShift = ""; setLoggedIn(null); }
+  catch(e) { $("selectionStatus").textContent = e.message; }
+};
+
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault(); loginStatus("Nagla-login...");
   try { const session = await signIn($("email").value.trim(), $("password").value); $("password").value = ""; loginStatus(""); setLoggedIn(session); }
   catch (err) { loginStatus("Hindi makapag-login: " + err.message); }
 });
-$("logoutBtn").onclick = async () => { try { await signOut(); setLoggedIn(null); } catch(e) { status(e.message); } };
+$("logoutBtn").onclick = async () => { try { await signOut(); activeStaff = ""; activeShift = ""; setLoggedIn(null); } catch(e) { status(e.message); } };
 $("openCamera").onclick = async () => {
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera access requires HTTPS or localhost.");
@@ -114,10 +145,9 @@ $("saveBtn").onclick = async () => {
   if (!imageBlob) return status("Kailangan munang pumili o kumuha ng receipt image.");
   if (!["GCash","Maya","BPI"].includes(method)) return status("Piliin ang GCash, Maya o BPI.");
   if (!reference || !amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return status("Maglagay ng wastong Reference Number at Amount.");
-  const staffName = $("staffName").value;
-  const shiftCode = $("shiftCode").value;
-  if (!staffName) return status("Piliin muna ang staff.");
-  if (!shiftCode) return status("Piliin muna ang shift.");
+  const staffName = activeStaff;
+  const shiftCode = activeShift;
+  if (!staffName || !shiftCode) return status("Piliin muna ang admin at shift bago magpatuloy.");
   $("saveBtn").disabled = true; status("Sine-save ang image at record sa Supabase...");
   try {
     await saveReceipt({ method, reference, amount, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value, staffName, shiftCode }, imageBlob);
