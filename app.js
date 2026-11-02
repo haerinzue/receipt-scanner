@@ -121,10 +121,10 @@ $("fileInput").onchange = e => {
 };
 $("readBtn").onclick = async () => {
   if (!imageData) return;
-  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Sinusuri ang resibo gamit ang Hybrid OCR...");
+  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Sinusuri ang resibo gamit ang PaddleOCR PP-OCRv6 Small...");
   try {
     const result = await readReceipt(imageData, (state, progress) => {
-      status(state === "recognizing text" ? "Hybrid OCR: sinusuri ang teksto at mga detalye..." : state);
+      status(state === "recognizing text" ? "PaddleOCR: sinusuri ang teksto at mga detalye..." : state);
       $("bar").style.width = Math.max(5,Math.round(progress*100)) + "%";
     });
     // Clear previous OCR-derived values first so an unread field cannot retain
@@ -142,11 +142,11 @@ $("readBtn").onclick = async () => {
     let engineNote = "";
     if (result.method === "BPI" && result.referenceDiagnostics) {
       const d = result.referenceDiagnostics;
-      const mask = value => value ? `••••${String(value).slice(-4)}` : "walang nabasa";
-      engineNote = ` BPI check — Full Tesseract: ${mask(d.fullImageTesseract)}; Close-up Tesseract: ${mask(d.closeupTesseract)}; OCRAD: ${mask(d.ocrad)}. ` +
-        (result.referenceCheck === "all-engines-agree" ? "Nagkakaisa ang tatlong basa." : "Hindi nagkakaisa o kulang ang basa; manual review ang kailangan.");
+      const mask = value => value ? `••••${String(value).slice(-4)}` : "walang malinaw na basa";
+      engineNote = ` BPI Confirmation No. line: ${mask(d.confirmationLine)}. ` +
+        (result.referenceCheck === "paddle-confirmation-line" ? "Nakuha mula sa mismong confirmation line; pakisuri pa rin." : "Kailangan ng manual review.");
     }
-    status(`Tapos ang Hybrid OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.${engineNote}`); $("bar").style.width = "100%";
+    status(`Tapos ang PaddleOCR (${result.pass || "PP-OCRv6 Small"}; average line confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.${engineNote}`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
