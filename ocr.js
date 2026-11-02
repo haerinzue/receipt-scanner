@@ -81,7 +81,13 @@ function parseReference(text, provider) {
       let candidate = lines[i].replace(/.*?(?:reference\s*(?:id|number|no\.?|#)?|ref\s*(?:id|no\.?|#)?|transaction\s*(?:id|number)|trace\s*(?:no\.?|number)|confirmation\s*(?:no\.?|number))\s*[:#-]?/i, '');
       if (!/[A-Z0-9]{5,}/i.test(candidate) && lines[i+1]) candidate = lines[i+1];
       candidate = candidate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (candidate.length >= 5 && candidate.length <= 40) return candidate;
+      // GCash/BPI reference values are treated as numeric here. Reject OCR-added
+      // letters instead of silently saving a corrupted reference number.
+      if (provider === 'GCash' || provider === 'BPI') {
+        if (/^\d{5,30}$/.test(candidate)) return candidate;
+      } else if (provider === 'Maya' && /^[A-Z0-9]{5,40}$/.test(candidate)) {
+        return candidate;
+      }
     }
   }
   return '';
@@ -147,9 +153,9 @@ export async function readReceipt(imageData, onProgress = () => {}) {
   const timeReads = [];
   for (let i = 0; i < passes.length; i++) {
     const pass = passes[i];
-    onProgress(`OCR pass ${i+1}/3: ${pass.label}`, i/3);
+    onProgress(`OCR pass ${i+1}/4: ${pass.label}`, i/4);
     const rec = await window.Tesseract.recognize(pass.image, 'eng', {
-      logger: m => { if (m.status) onProgress(`${pass.label}: ${m.status}`, (i + (m.progress || 0))/3); },
+      logger: m => { if (m.status) onProgress(`${pass.label}: ${m.status}`, (i + (m.progress || 0))/4); },
       tessedit_pageseg_mode: pass.psm,
       preserve_interword_spaces: '1'
     });
@@ -170,7 +176,7 @@ export async function readReceipt(imageData, onProgress = () => {}) {
     if (candidate.time) timeReads.push(candidate.time);
     if (!candidate.method) candidate.warnings.push('Hindi matukoy ang payment provider. Piliin ito nang mano-mano.');
     if (!candidate.amount) candidate.warnings.push('Hindi makita nang malinaw ang amount. Suriin ang halagang nasa resibo.');
-    if (!candidate.reference) candidate.warnings.push('Walang nakuhang reference number. Huwag hulaan; ilagay ito nang mano-mano.');
+    if (!candidate.reference) candidate.warnings.push('Hindi nakuha nang ligtas ang reference number. Kung may sobrang letra o numero sa OCR, huwag itong gamitin; ilagay mula sa mismong resibo.');
     if (!candidate.date || !candidate.time) candidate.warnings.push('Kulang ang petsa o oras; tingnan ang orihinal na resibo.');
     if (candidate.confidence < 65) candidate.warnings.push('Mababa ang OCR confidence. Mas mainam ang malinaw at tuwid na screenshot.');
     if (!best || scoreResult(candidate) > scoreResult(best)) best = candidate;
