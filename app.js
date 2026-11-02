@@ -127,6 +127,9 @@ $("readBtn").onclick = async () => {
       status(state === "recognizing text" ? "Binabasa ang text..." : state);
       $("bar").style.width = Math.max(5,Math.round(progress*100)) + "%";
     });
+    // Clear previous OCR-derived values first so an unread field cannot retain
+    // data from the previously scanned receipt by accident.
+    ["method","amount","reference","txDate","txTime"].forEach(id => $(id).value = "");
     $("rawText").value = result.text;
     $("ocrWarnings").textContent = (result.warnings || []).join(" ");
     $("ocrWarnings").classList.toggle("hidden", !(result.warnings || []).length);
@@ -136,7 +139,7 @@ $("readBtn").onclick = async () => {
     if (result.date) $("txDate").value = result.date;
     if (result.time) $("txTime").value = result.time;
     const filled = [result.method,result.amount,result.reference,result.date,result.time].filter(Boolean).length;
-    status(`Tapos ang 4-pass OCR (${result.pass || "multi-pass"}; text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
+    status(`Tapos ang 5-pass OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
