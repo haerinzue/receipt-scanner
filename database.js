@@ -38,6 +38,7 @@ export async function saveReceipt(record, imageFile) {
   const imagePath = await uploadReceiptImage(imageFile);
   const row = {
     payment_method: record.method,
+    customer_name: String(record.customerName || "").trim(),
     amount: Number(record.amount),
     reference_number: String(record.reference).trim(),
     transaction_date: record.txDate || null,

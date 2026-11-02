@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Receipt Scanner</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div class="wrap">
@@ -87,6 +87,7 @@
             <select id="method"><option value="">Piliin / auto-detect</option><option>GCash</option><option>Maya</option><option>BPI</option><option>Unknown</option></select>
           </div>
           <div class="field"><label for="amount">AMOUNT (₱)</label><input id="amount" placeholder="Hal. 1250.00" inputmode="decimal"></div>
+          <div class="field full"><label for="customerName">CUSTOMER NAME</label><input id="customerName" placeholder="I-type ang pangalan ng customer" autocomplete="name" maxlength="120" required></div>
           <div class="field full"><label for="reference">REFERENCE NUMBER</label><input id="reference" placeholder="Reference / Transaction ID"></div>
           <div class="field"><label for="txDate">TRANSACTION DATE</label><input id="txDate" type="date"></div>
           <div class="field"><label for="txTime">TRANSACTION TIME</label><input id="txTime" type="time"></div>
@@ -134,6 +135,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

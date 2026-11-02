@@ -45,7 +45,7 @@ async function refresh() {
   try {
     cachedRecords = await getReceipts();
     const searchTerm = ($("search").value || "").trim().toLowerCase();
-    let records = searchTerm ? cachedRecords.filter(r => `${r.reference_number} ${r.payment_method} ${r.amount} ${r.staff_name || ""}`.toLowerCase().includes(searchTerm)) : [...cachedRecords];
+    let records = searchTerm ? cachedRecords.filter(r => `${r.reference_number} ${r.payment_method} ${r.amount} ${r.customer_name || ""} ${r.staff_name || ""}`.toLowerCase().includes(searchTerm)) : [...cachedRecords];
     const staffFilter = $("staffFilter")?.value || "";
     const shiftFilter = $("shiftFilter")?.value || "";
     if (staffFilter) records = records.filter(r => r.staff_name === staffFilter);
@@ -70,7 +70,7 @@ async function refresh() {
         const left = document.createElement("div");
         const strong = document.createElement("strong"); strong.textContent = `${r.payment_method} · ${peso(r.amount)}`;
         const meta = document.createElement("div"); meta.className = "meta";
-        meta.textContent = `Ref: ${r.reference_number} · Transaction: ${r.transaction_date || "—"} ${r.transaction_time || ""}`;
+        meta.textContent = `Customer: ${r.customer_name || "—"} · Ref: ${r.reference_number} · Transaction: ${r.transaction_date || "—"} ${r.transaction_time || ""}`;
         const assignment = document.createElement("div"); assignment.className = "meta";
         assignment.textContent = `Staff: ${r.staff_name || "Hindi nakatalaga"} · ${labels[r.shift_code] || "Walang shift"}`;
         const tag = document.createElement("span"); tag.className = "tag";
@@ -156,7 +156,7 @@ $("readBtn").onclick = async () => {
     });
     // Clear previous OCR-derived values first so an unread field cannot retain
     // data from the previously scanned receipt by accident.
-    ["method","amount","reference","txDate","txTime"].forEach(id => $(id).value = "");
+    ["method","amount","customerName","reference","txDate","txTime"].forEach(id => $(id).value = "");
     $("rawText").value = result.text;
     $("ocrWarnings").textContent = (result.warnings || []).join(" ");
     $("ocrWarnings").classList.toggle("hidden", !(result.warnings || []).length);
@@ -181,6 +181,8 @@ $("saveBtn").onclick = async () => {
   const method = $("method").value, reference = $("reference").value.trim(), amount = $("amount").value.trim();
   if (!imageBlob) return status("Kailangan munang pumili o kumuha ng receipt image.");
   if (!["GCash","Maya","BPI"].includes(method)) return status("Piliin ang GCash, Maya o BPI.");
+  const customerName = $("customerName").value.trim();
+  if (!customerName) return status("Ilagay muna ang pangalan ng customer.");
   if (!reference || !amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return status("Maglagay ng wastong Reference Number at Amount.");
   const staffName = activeStaff;
   const shiftCode = activeShift;
@@ -199,7 +201,7 @@ $("saveBtn").onclick = async () => {
   $("duplicateNotice").classList.add("hidden");
   status("Walang kaparehong reference. Sine-save ang image at record...");
   try {
-    await saveReceipt({ method, reference, amount, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value, staffName, shiftCode }, imageBlob);
+    await saveReceipt({ method, reference, amount, customerName, txDate: $("txDate").value, txTime: $("txTime").value, rawText: $("rawText").value, staffName, shiftCode }, imageBlob);
     status("Matagumpay na na-save sa Supabase!"); $("duplicateNotice").classList.add("hidden"); await refresh();
   } catch(e) {
     if (String(e.message).startsWith("DUPLICATE_RECEIPT:")) {
@@ -216,7 +218,7 @@ $("clearBtn").onclick = () => {
   $("ocrWarnings").classList.add("hidden");
   $("readBtn").disabled = true; $("saveBtn").disabled = true; $("fileInput").value = ""; status("");
 };
-$("resetFields").onclick = () => ["method","amount","reference","txDate","txTime","rawText"].forEach(id => $(id).value = "");
+$("resetFields").onclick = () => ["method","amount","customerName","reference","txDate","txTime","rawText"].forEach(id => $(id).value = "");
 $("search").oninput = refresh;
 $("staffFilter").onchange = refresh;
 $("shiftFilter").onchange = refresh;
@@ -235,26 +237,48 @@ function reportRows() {
   ).sort((a,b)=>`${a.transaction_date||""} ${a.transaction_time||""}`.localeCompare(`${b.transaction_date||""} ${b.transaction_time||""}`));
 }
 function buildReportHTML(rows) {
-  const from=$("reportDateFrom").value || "All dates", to=$("reportDateTo").value || "All dates";
+  const from=$("reportDateFrom").value || "All dates";
+  const to=$("reportDateTo").value || "All dates";
   const shift=$("reportShift").value ? `Shift: ${reportShiftNames[$("reportShift").value]}` : "All shifts";
   const staff=$("reportStaff").value || "All staff";
   const method=$("reportMethod").value || "All payment methods";
+  const branch="MGH Concepcion";
+  const title = $("reportMethod").value === "GCash" ? "GCash Receivable Report"
+    : $("reportMethod").value ? `${$("reportMethod").value} Receivable Report`
+    : "Overall Receivable Report";
   const total=rows.reduce((s,r)=>s+Number(r.amount||0),0);
   const fmt=n=>Number(n||0).toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2});
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const byMethod=["GCash","Maya","BPI"].map(m=>({m,total:rows.filter(r=>r.payment_method===m).reduce((s,r)=>s+Number(r.amount||0),0)}));
   const groupedByDate = new Map();
-  rows.forEach(r => { const day = r.transaction_date || "No transaction date"; if (!groupedByDate.has(day)) groupedByDate.set(day, []); groupedByDate.get(day).push(r); });
+  rows.forEach(r => {
+    const day = r.transaction_date || "No transaction date";
+    if (!groupedByDate.has(day)) groupedByDate.set(day, []);
+    groupedByDate.get(day).push(r);
+  });
   let table = "";
   for (const [day, dayRows] of groupedByDate) {
     const dayTotal = dayRows.reduce((s,r)=>s+Number(r.amount||0),0);
     table += `<tr class="day-band"><th colspan="6">Date: ${esc(day)}</th></tr>`;
-    table += dayRows.map(r=>`<tr><td>${esc(r.transaction_date||"—")} ${esc(r.transaction_time||"")}</td><td>${esc(r.staff_name||"—")}</td><td>${esc(reportShiftNames[r.shift_code]||"—")}</td><td>${esc(r.payment_method||"—")}</td><td>${esc(r.reference_number||"—")}</td><td class="money">₱${fmt(r.amount)}</td></tr>`).join("");
-    table += `<tr class="day-subtotal"><th colspan="5">Sub-total for ${esc(day)} (${dayRows.length} receipts)</th><th class="money">₱${fmt(dayTotal)}</th></tr>`;
+    table += dayRows.map(r=>`<tr>
+      <td>${esc(branch)}</td>
+      <td>${esc(r.customer_name||"—")}</td>
+      <td>${esc(r.payment_method||"—")}</td>
+      <td>${esc(r.reference_number||"—")}</td>
+      <td class="money">₱${fmt(r.amount)}</td>
+      <td>${esc(r.staff_name||"—")}</td>
+    </tr>`).join("");
+    table += `<tr class="day-subtotal"><th colspan="4">Sub-total for ${esc(day)} (${dayRows.length} receipts)</th><th class="money">₱${fmt(dayTotal)}</th><th></th></tr>`;
   }
-  return `<div class="print-report"><header><h1>Receipt Collection Report</h1><p>Date: ${esc(from)} to ${esc(to)}</p><p>${esc(shift)} · ${esc(staff)} · ${esc(method)}</p></header>
-  <div class="report-kpis"><div><b>${rows.length}</b><span>Total Receipts</span></div><div><b>₱${fmt(total)}</b><span>Grand Total</span></div>${byMethod.map(x=>`<div><b>₱${fmt(x.total)}</b><span>${x.m}</span></div>`).join("")}</div>
-  <table><thead><tr><th>Transaction Date / Time</th><th>Encoded By</th><th>Shift</th><th>Payment Method</th><th>Reference</th><th>Amount</th></tr></thead><tbody>${table||'<tr><td colspan="6">No matching receipts</td></tr>'}</tbody><tfoot><tr><th colspan="5">GRAND TOTAL (${rows.length} receipts)</th><th class="money">₱${fmt(total)}</th></tr></tfoot></table>
+  return `<div class="print-report"><header>
+    <h1>${esc(title)}</h1>
+    <p>Date: ${esc(from)} to ${esc(to)}</p>
+    <p>Branch: ${esc(branch)}</p>
+    <p class="report-filter-line">${esc(shift)} · ${esc(staff)} · ${esc(method)}</p>
+  </header>
+  <table><thead><tr>
+    <th>Branch</th><th>Customer</th><th>Payment Method</th><th>Reference</th><th class="money">Amount</th><th>Encoded By</th>
+  </tr></thead><tbody>${table||'<tr><td colspan="6">No matching receipts</td></tr>'}</tbody>
+  <tfoot><tr><th colspan="4">GRAND TOTAL (${rows.length} receipts)</th><th class="money">₱${fmt(total)}</th><th></th></tr></tfoot></table>
   <p class="report-generated">Generated: ${esc(new Date().toLocaleString("en-PH"))}</p></div>`;
 }
 function previewReport() {
@@ -272,10 +296,26 @@ $("printReport").onclick=()=>{
   const report=buildReportHTML(rows);
   const w=window.open("","_blank");
   if (!w) { alert("Na-block ang print window. Payagan ang pop-ups para sa site na ito."); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt Collection Report</title><style>
-  @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#222;margin:0}.print-report header{text-align:center;margin-bottom:18px}.print-report h1{font-size:20px;margin:0 0 5px}.print-report header p{margin:2px;color:#555}
-  .report-kpis{display:flex;gap:10px;margin:14px 0}.report-kpis div{border:1px solid #bbb;padding:8px 12px;min-width:115px;flex:1}.report-kpis b,.report-kpis span{display:block}.report-kpis b{font-size:15px}.report-kpis span{font-size:10px;color:#555;margin-top:3px}
-  table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:6px;text-align:left;vertical-align:top}thead th{background:#e8ebf0}.day-band th{background:#e4e7ec;text-align:left}.day-subtotal th{background:#f7f8fa}tfoot th{background:#f2f3f5}.money{text-align:right;white-space:nowrap}.report-generated{text-align:right;color:#666;font-size:9px;margin-top:12px}
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receivable Report</title><style>
+  @page{size:A4 landscape;margin:12mm}
+  *{box-sizing:border-box}
+  body{font:11px Arial,Helvetica,sans-serif;color:#222;margin:0}
+  .print-report header{text-align:center;margin:0 0 18px}
+  .print-report h1{font-size:19px;font-weight:700;margin:0 0 5px}
+  .print-report header p{font-size:12px;color:#555;margin:2px 0}
+  .report-filter-line{font-size:10px!important;margin-top:5px!important}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  th,td{border:1px solid #c8cbd0;padding:7px 6px;text-align:left;vertical-align:middle;overflow-wrap:anywhere}
+  thead{display:table-header-group}
+  thead th{background:#f0f1f3;font-weight:700}
+  tbody tr{page-break-inside:avoid}
+  .day-band th{background:#e4e6e9;text-align:left;font-weight:700}
+  .day-subtotal th{background:#f7f8fa;font-weight:700}
+  tfoot{display:table-row-group}
+  tfoot th{background:#f2f3f5;font-weight:700}
+  .money{text-align:right;white-space:nowrap}
+  .report-generated{text-align:right;color:#666;font-size:9px;margin-top:12px}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-report{width:100%}}
   </style></head><body>${report}<script>window.onload=()=>{window.focus();window.print();};<\\/script></body></html>`);
   w.document.close();
 };
