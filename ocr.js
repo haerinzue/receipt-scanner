@@ -160,61 +160,63 @@ function parseDateTime(text) {
 
 
 async function readBpiConfirmationCrop(imageData, words) {
-  if (!Array.isArray(words) || !words.length) return [];
-  const marker = words.find(w => /confirm/i.test(w.text || ""));
-  if (!marker || !marker.bbox) return [];
+  if (!Array.isArray(words) || !words.length) return { tesseractCandidates: [], ocradText: '', ocradRef: '' };
+  const marker = words.find(w => /confirm/i.test(w.text || ''));
+  if (!marker || !marker.bbox) return { tesseractCandidates: [], ocradText: '', ocradRef: '' };
   const img = new Image();
-  await new Promise((resolve, reject) => {
-    img.onload = resolve; img.onerror = reject; img.src = imageData;
-  });
+  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = imageData; });
   const b = marker.bbox;
-  // Crop the entire confirmation row, not just the word "Confirmation".
-  const y1 = Math.max(0, Math.floor(b.y0 - 24));
-  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + 32));
-  const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
+  // Start at the confirmation label rather than scanning the entire receipt row.
+  // This reduces the chance of collecting unrelated digits from nearby fields.
+  const x1 = Math.max(0, Math.floor(b.x0 - 8));
+  const x2 = img.naturalWidth;
+  const y1 = Math.max(0, Math.floor(b.y0 - 12));
+  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + 24));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, x2 - x1);
   canvas.height = Math.max(1, y2 - y1);
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, y1, img.naturalWidth, canvas.height, 0, 0, canvas.width, canvas.height);
-  const enlarged = document.createElement("canvas");
-  const scale = Math.min(4, Math.max(2, 1800 / canvas.width));
-  enlarged.width = Math.round(canvas.width * scale);
-  enlarged.height = Math.round(canvas.height * scale);
-  const ectx = enlarged.getContext("2d");
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, x1, y1, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  // Upscale and enhance contrast without applying a hard threshold that can erase thin digits.
+  const scale = Math.min(5, Math.max(2.5, 2200 / canvas.width));
+  const enlarged = document.createElement('canvas');
+  enlarged.width = Math.max(1, Math.round(canvas.width * scale));
+  enlarged.height = Math.max(1, Math.round(canvas.height * scale));
+  const ectx = enlarged.getContext('2d', { willReadFrequently: true });
   ectx.imageSmoothingEnabled = true;
-  ectx.imageSmoothingQuality = "high";
+  ectx.imageSmoothingQuality = 'high';
   ectx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
-  const crop = enlarged.toDataURL("image/png");
-  const found = [];
-  let independentRef = "";
-  // Independent local OCR engine (OCRAD.js). It runs in the browser and
-  // does not upload receipt images. Its output is a safety cross-check only.
-  let independent = "";
+  const pixels = ectx.getImageData(0, 0, enlarged.width, enlarged.height);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const g = .299 * pixels.data[i] + .587 * pixels.data[i+1] + .114 * pixels.data[i+2];
+    const v = Math.max(0, Math.min(255, (g - 128) * 1.7 + 128));
+    pixels.data[i] = pixels.data[i+1] = pixels.data[i+2] = v;
+  }
+  ectx.putImageData(pixels, 0, 0);
+  const crop = enlarged.toDataURL('image/png');
+  const tesseractCandidates = [];
+  let ocradText = '', ocradRef = '';
+  // OCRAD is a genuinely separate local OCR engine. Keep its result separate
+  // from Tesseract votes so it cannot accidentally count as a Tesseract pass.
   if (window.OCRAD) {
     try {
-      const ocradCanvas = document.createElement("canvas");
-      ocradCanvas.width = enlarged.width;
-      ocradCanvas.height = enlarged.height;
-      const octx = ocradCanvas.getContext("2d");
-      octx.drawImage(enlarged, 0, 0);
-      independent = String(window.OCRAD(ocradCanvas, { numeric: true }) || "");
-      const digits = independent.replace(/\D/g, "");
+      ocradText = String(window.OCRAD(enlarged, { numeric: true }) || '').trim();
+      const digits = ocradText.replace(/\D/g, '');
       const matches = digits.match(/\d{10,20}/g) || [];
-      independentRef = matches[0] || "";
-      for (const value of matches) found.push(value);
-    } catch (e) { /* OCRAD is optional; Tesseract remains the primary OCR. */ }
+      ocradRef = matches[0] || '';
+    } catch (e) { ocradText = ''; ocradRef = ''; }
   }
   for (const psm of [7, 8, 13]) {
-    const r = await window.Tesseract.recognize(crop, "eng", {
+    const r = await window.Tesseract.recognize(crop, 'eng', {
       tessedit_pageseg_mode: psm,
-      tessedit_char_whitelist: "0123456789",
-      preserve_interword_spaces: "1"
+      tessedit_char_whitelist: '0123456789',
+      preserve_interword_spaces: '1'
     });
-    const digits = String(r.data.text || "").replace(/\D/g, "");
-    const match = digits.match(/\d{10,20}/g) || [];
-    for (const value of match) found.push(value);
+    const digits = String(r.data.text || '').replace(/\D/g, '');
+    const matches = digits.match(/\d{10,20}/g) || [];
+    tesseractCandidates.push(...matches);
   }
-  return { candidates: found, independentRef };
+  return { tesseractCandidates, ocradText, ocradRef };
 }
 
 function score(r) {
@@ -252,29 +254,34 @@ export async function readReceipt(imageData,onProgress=()=>{}) {
   if (best.method === "BPI" && /confirm/i.test(best.text || "")) {
     try {
       const cropRead = await readBpiConfirmationCrop(best.sourceImage || imageData, best.words);
-      const cropCandidates = cropRead.candidates;
       const counts = new Map();
-      // Count only Tesseract's three targeted segmentation passes for majority.
-      for (const candidate of cropCandidates.slice(cropRead.independentRef ? 1 : 0)) counts.set(candidate, (counts.get(candidate) || 0) + 1);
+      for (const candidate of cropRead.tesseractCandidates) counts.set(candidate, (counts.get(candidate) || 0) + 1);
       const ranked = [...counts.entries()].sort((a,b) => b[1]-a[1]);
-      // Never let the crop OCR overwrite the full-image reference.
-      // The previous approach accepted a crop majority even when it contained
-      // extra digits (e.g. "208" + the actual confirmation number).
       const cropWinner = ranked.length && ranked[0][1] >= 2 &&
         (ranked.length === 1 || ranked[0][1] > ranked[1][1]) ? ranked[0][0] : "";
-      // OCRAD contributes one independent vote. If it detects a complete
-      // reference that conflicts with the Tesseract result, require manual entry.
-      const independentConflict = cropRead.independentRef && best.reference &&
-        cropRead.independentRef !== best.reference;
-      if (best.reference && cropWinner && cropWinner === best.reference && !independentConflict) {
-        best.referenceCheck = "full-and-crop-agree";
+      best.referenceDiagnostics = {
+        fullImageTesseract: best.reference || "",
+        closeupTesseract: cropWinner,
+        closeupTesseractVotes: cropWinner ? counts.get(cropWinner) : 0,
+        ocrad: cropRead.ocradRef || "",
+        ocradLoaded: !!window.OCRAD
+      };
+      // Require independent engines and the targeted crop to agree exactly.
+      // A disagreement or missing OCRAD result always means manual confirmation.
+      const allAgree = !!best.reference && !!cropWinner && !!cropRead.ocradRef &&
+        best.reference === cropWinner && best.reference === cropRead.ocradRef;
+      if (allAgree) {
+        best.referenceCheck = "all-engines-agree";
       } else {
         best.reference = "";
         best.referenceCheck = "needs-manual-check";
-        best.warnings.push("Hindi eksaktong nagtugma ang buong resibo at close-up OCR para sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikopya ito mula sa orihinal na resibo.");
+        best.warnings.push("Hindi nagkakaisa ang full-image Tesseract, close-up Tesseract at OCRAD sa BPI Confirmation No. Iniwan itong blanko para maiwasan ang maling reference number. Pakikopya mula sa orihinal na resibo.");
       }
     } catch (e) {
-      // Keep the full-image result; never fabricate a corrected reference number.
+      best.reference = "";
+      best.referenceCheck = "needs-manual-check";
+      best.referenceDiagnostics = { fullImageTesseract: "", closeupTesseract: "", ocrad: "", ocradLoaded: !!window.OCRAD, error: "close-up-check-failed" };
+      best.warnings.push("Hindi nakumpleto ang BPI reference cross-check. Pakikopya nang mano-mano mula sa orihinal na resibo.");
     }
   }
   if(!best.method) best.warnings.push('Hindi matukoy ang payment method; piliin ito nang mano-mano.');

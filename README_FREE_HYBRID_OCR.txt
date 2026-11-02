@@ -14,3 +14,11 @@ UI LABEL UPDATE:
 - Button: Basahin gamit ang Hybrid OCR
 - Status: Tapos ang Hybrid OCR
 - Note: Tesseract ang pangunahing multi-pass OCR; OCRAD ay dagdag na cross-check para sa BPI confirmation reference kung available. Hindi ito garantiya ng 100% accuracy.
+
+
+HYBRID OCR CROSS-CHECK UPDATE
+- Tesseract close-up candidates and OCRAD output are stored separately; OCRAD is no longer accidentally counted as a Tesseract pass.
+- BPI confirmation row crop starts near the Confirmation label to reduce unrelated digits.
+- BPI reference is auto-filled only when full-image Tesseract, close-up Tesseract majority, and OCRAD all return the exact same number. Otherwise it stays blank for manual review.
+- The status line displays masked last-four-digit diagnostics for each engine.
+- This is a conservative accuracy/safety improvement, not a guarantee of correct OCR.

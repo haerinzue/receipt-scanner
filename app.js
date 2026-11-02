@@ -139,7 +139,14 @@ $("readBtn").onclick = async () => {
     if (result.date) $("txDate").value = result.date;
     if (result.time) $("txTime").value = result.time;
     const filled = [result.method,result.amount,result.reference,result.date,result.time].filter(Boolean).length;
-    status(`Tapos ang Hybrid OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field. Para sa BPI reference, may dagdag na OCRAD cross-check kung available.`); $("bar").style.width = "100%";
+    let engineNote = "";
+    if (result.method === "BPI" && result.referenceDiagnostics) {
+      const d = result.referenceDiagnostics;
+      const mask = value => value ? `••••${String(value).slice(-4)}` : "walang nabasa";
+      engineNote = ` BPI check — Full Tesseract: ${mask(d.fullImageTesseract)}; Close-up Tesseract: ${mask(d.closeupTesseract)}; OCRAD: ${mask(d.ocrad)}. ` +
+        (result.referenceCheck === "all-engines-agree" ? "Nagkakaisa ang tatlong basa." : "Hindi nagkakaisa o kulang ang basa; manual review ang kailangan.");
+    }
+    status(`Tapos ang Hybrid OCR (${result.pass || "multi-pass"}; overall text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.${engineNote}`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
