@@ -22,6 +22,7 @@ function dataUrlToBlob(dataUrl) {
 }
 function showImage(data, blob) {
   imageData = data; imageBlob = blob || dataUrlToBlob(data);
+  $("ocrWarnings")?.classList.add("hidden");
   $("preview").innerHTML = "";
   const img = document.createElement("img"); img.src = data; $("preview").appendChild(img);
   $("readBtn").disabled = false; $("saveBtn").disabled = false;
@@ -89,12 +90,15 @@ $("readBtn").onclick = async () => {
       $("bar").style.width = Math.max(5,Math.round(progress*100)) + "%";
     });
     $("rawText").value = result.text;
+    $("ocrWarnings").textContent = (result.warnings || []).join(" ");
+    $("ocrWarnings").classList.toggle("hidden", !(result.warnings || []).length);
     if (result.method) $("method").value = result.method;
     if (result.reference) $("reference").value = result.reference;
     if (result.amount) $("amount").value = result.amount;
     if (result.date) $("txDate").value = result.date;
     if (result.time) $("txTime").value = result.time;
-    status(`Tapos ang OCR (${result.pass || "multi-pass"}; confidence ${result.confidence ?? "—"}%). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
+    const filled = [result.method,result.amount,result.reference,result.date,result.time].filter(Boolean).length;
+    status(`Tapos ang 3-pass OCR (${result.pass || "multi-pass"}; text confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
@@ -113,6 +117,7 @@ $("saveBtn").onclick = async () => {
 $("clearBtn").onclick = () => {
   stopCamera(); imageData = null; imageBlob = null;
   $("preview").innerHTML = '<div class="placeholder">📄<br><b>Wala pang napipiling resibo</b></div>';
+  $("ocrWarnings").classList.add("hidden");
   $("readBtn").disabled = true; $("saveBtn").disabled = true; $("fileInput").value = ""; status("");
 };
 $("resetFields").onclick = () => ["method","amount","reference","txDate","txTime","rawText"].forEach(id => $(id).value = "");

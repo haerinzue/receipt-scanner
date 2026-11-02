@@ -53,14 +53,14 @@ function parseAmount(text, provider) {
   const anchors = provider === 'Maya'
     ? [/total amount/i, /amount sent/i, /sent money/i, /transfer amount/i, /^[-–]\s*₱?/i]
     : [/total amount/i, /amount sent/i, /transfer amount/i, /transaction amount/i, /^amount\b/i, /paid/i];
-  const money = /(?:PHP|₱|P\s*)?\s*(-?\s*[\d,]+\.\d{2})/i;
+  const money = /(?:PHP|₱|P\s*)?\s*-?\s*([\d,]+\.\d{2})/i;
   for (let i = 0; i < lines.length; i++) {
     if (anchors.some(re => re.test(lines[i]))) {
       const same = lines[i].match(money);
-      if (same) return same[1].replace(/[\s,]/g, '').replace(/^-/, '');
+      if (same) return same[1].replace(/[\s,]/g, '');
       for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
         const next = lines[j].match(money);
-        if (next) return next[1].replace(/[\s,]/g, '').replace(/^-/, '');
+        if (next) return next[1].replace(/[\s,]/g, '');
       }
     }
   }
@@ -117,8 +117,20 @@ function parseDateTime(text) {
 
 function scoreResult(result) {
   const t = result.text || '';
-  return (result.method ? 8 : 0) + (result.amount ? 5 : 0) + (result.reference ? 7 : 0) + (result.date ? 3 : 0) + (result.time ? 2 : 0) + Math.min(5, t.length / 120) + (Number(result.confidence) || 0) / 100;
+  return (result.method ? 10 : 0) + (result.amount ? 8 : 0) + (result.reference ? 10 : 0) + (result.date ? 4 : 0) + (result.time ? 3 : 0) + Math.min(5, t.length / 120) + (Number(result.confidence) || 0) / 100;
 }
+
+function fieldConfidence(result) {
+  const base = Math.max(0, Math.min(100, Number(result.confidence) || 0));
+  return {
+    method: result.method ? Math.min(98, Math.round(base * .75 + 20)) : 0,
+    amount: result.amount ? Math.min(95, Math.round(base * .7 + 22)) : 0,
+    reference: result.reference ? Math.min(95, Math.round(base * .72 + 18)) : 0,
+    date: result.date ? Math.min(95, Math.round(base * .7 + 20)) : 0,
+    time: result.time ? Math.min(95, Math.round(base * .7 + 20)) : 0
+  };
+}
+
 
 export async function readReceipt(imageData, onProgress = () => {}) {
   if (!window.Tesseract) throw new Error('Hindi ma-load ang Tesseract OCR library.');
@@ -147,8 +159,15 @@ export async function readReceipt(imageData, onProgress = () => {}) {
       confidence: Math.round(Number(rec.data.confidence) || 0),
       pass: pass.label
     };
+    candidate.fieldConfidence = fieldConfidence(candidate);
+    candidate.warnings = [];
+    if (!candidate.method) candidate.warnings.push('Hindi matukoy ang payment provider. Piliin ito nang mano-mano.');
+    if (!candidate.amount) candidate.warnings.push('Hindi makita nang malinaw ang amount. Suriin ang halagang nasa resibo.');
+    if (!candidate.reference) candidate.warnings.push('Walang nakuhang reference number. Huwag hulaan; ilagay ito nang mano-mano.');
+    if (!candidate.date || !candidate.time) candidate.warnings.push('Kulang ang petsa o oras; tingnan ang orihinal na resibo.');
+    if (candidate.confidence < 65) candidate.warnings.push('Mababa ang OCR confidence. Mas mainam ang malinaw at tuwid na screenshot.');
     if (!best || scoreResult(candidate) > scoreResult(best)) best = candidate;
     if (best.method && best.amount && best.reference && best.date && best.time && best.confidence >= 80) break;
   }
-  return best || { text: '', method: '', amount: '', reference: '', date: '', time: '', confidence: 0, pass: '' };
+  return best || { text: '', method: '', amount: '', reference: '', date: '', time: '', confidence: 0, pass: '', fieldConfidence: {}, warnings: ['Walang tekstong nabasa.'] };
 }
