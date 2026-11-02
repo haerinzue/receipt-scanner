@@ -27,6 +27,8 @@ function enhanceImage(dataUrl, mode = 'contrast') {
         let gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
         if (mode === 'threshold') gray = gray > 165 ? 255 : 0;
         else if (mode === 'contrast') gray = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 140));
+        else if (mode === 'brighten') gray = Math.max(0, Math.min(255, 255 * Math.pow(gray / 255, 0.72)));
+        else if (mode === 'soft') gray = Math.max(0, Math.min(255, (gray - 110) * 1.18 + 150));
         d[i] = d[i+1] = d[i+2] = gray;
       }
       ctx.putImageData(frame, 0, 0);
@@ -136,10 +138,13 @@ export async function readReceipt(imageData, onProgress = () => {}) {
   if (!window.Tesseract) throw new Error('Hindi ma-load ang Tesseract OCR library.');
   const passes = [
     { label: 'Original image', image: imageData, psm: 6 },
-    { label: 'Enhanced contrast', image: await enhanceImage(imageData, 'contrast'), psm: 6 },
+    { label: 'Brightened image', image: await enhanceImage(imageData, 'brighten'), psm: 6 },
+    { label: 'Soft contrast', image: await enhanceImage(imageData, 'soft'), psm: 6 },
     { label: 'High contrast', image: await enhanceImage(imageData, 'threshold'), psm: 11 }
   ];
   let best = null;
+  const dateReads = [];
+  const timeReads = [];
   for (let i = 0; i < passes.length; i++) {
     const pass = passes[i];
     onProgress(`OCR pass ${i+1}/3: ${pass.label}`, i/3);
@@ -161,13 +166,28 @@ export async function readReceipt(imageData, onProgress = () => {}) {
     };
     candidate.fieldConfidence = fieldConfidence(candidate);
     candidate.warnings = [];
+    if (candidate.date) dateReads.push(candidate.date);
+    if (candidate.time) timeReads.push(candidate.time);
     if (!candidate.method) candidate.warnings.push('Hindi matukoy ang payment provider. Piliin ito nang mano-mano.');
     if (!candidate.amount) candidate.warnings.push('Hindi makita nang malinaw ang amount. Suriin ang halagang nasa resibo.');
     if (!candidate.reference) candidate.warnings.push('Walang nakuhang reference number. Huwag hulaan; ilagay ito nang mano-mano.');
     if (!candidate.date || !candidate.time) candidate.warnings.push('Kulang ang petsa o oras; tingnan ang orihinal na resibo.');
     if (candidate.confidence < 65) candidate.warnings.push('Mababa ang OCR confidence. Mas mainam ang malinaw at tuwid na screenshot.');
     if (!best || scoreResult(candidate) > scoreResult(best)) best = candidate;
-    if (best.method && best.amount && best.reference && best.date && best.time && best.confidence >= 80) break;
+  }
+  if (best) {
+    const distinctDates = [...new Set(dateReads)];
+    const distinctTimes = [...new Set(timeReads)];
+    // Never silently choose a date/time when OCR passes disagree or the image read is weak.
+    if (distinctDates.length > 1 || best.confidence < 60) {
+      best.date = '';
+      best.warnings.push('Hindi tiyak ang petsa dahil malabo o mababa ang OCR confidence. Pakikumpirma at ilagay ang petsa mula sa mismong resibo.');
+    }
+    if (distinctTimes.length > 1 || best.confidence < 45) {
+      best.time = '';
+      best.warnings.push('Pakikumpirma ang oras sa orihinal na resibo bago i-save.');
+    }
+    if (distinctDates.length > 1) best.warnings.push('Magkakaiba ang petsang nabasa sa iba’t ibang image pass; hindi kami pipili nang hulaan.');
   }
   return best || { text: '', method: '', amount: '', reference: '', date: '', time: '', confidence: 0, pass: '', fieldConfidence: {}, warnings: ['Walang tekstong nabasa.'] };
 }
