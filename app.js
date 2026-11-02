@@ -243,7 +243,7 @@ function buildReportHTML(rows) {
   const staff=$("reportStaff").value || "All staff";
   const method=$("reportMethod").value || "All payment methods";
   const branch="MGH Concepcion";
-  const title = $("reportMethod").value === "GCash" ? "GCash Receivable Report"
+  const title = $("reportMethod").value === "GCash" ? "Gcash Receivable Report"
     : $("reportMethod").value ? `${$("reportMethod").value} Receivable Report`
     : "Overall Receivable Report";
   const total=rows.reduce((s,r)=>s+Number(r.amount||0),0);
@@ -275,10 +275,13 @@ function buildReportHTML(rows) {
     <p>Branch: ${esc(branch)}</p>
     <p class="report-filter-line">${esc(shift)} · ${esc(staff)} · ${esc(method)}</p>
   </header>
-  <table><thead><tr>
+  <table><colgroup>
+    <col style="width:17%"><col style="width:13%"><col style="width:20%">
+    <col style="width:20%"><col style="width:12%"><col style="width:18%">
+  </colgroup><thead><tr>
     <th>Branch</th><th>Customer</th><th>Payment Method</th><th>Reference</th><th class="money">Amount</th><th>Encoded By</th>
-  </tr></thead><tbody>${table||'<tr><td colspan="6">No matching receipts</td></tr>'}</tbody>
-  <tfoot><tr><th colspan="4">GRAND TOTAL (${rows.length} receipts)</th><th class="money">₱${fmt(total)}</th><th></th></tr></tfoot></table>
+  </tr></thead><tbody>${table||'<tr><td colspan="6">No matching receipts</td></tr>'}</tbody></table>
+  <div class="grand-total"><strong>Grand Total:</strong> <strong class="grand-amount">₱${fmt(total)}</strong></div>
   <p class="report-generated">Generated: ${esc(new Date().toLocaleString("en-PH"))}</p></div>`;
 }
 function previewReport() {
@@ -297,25 +300,32 @@ $("printReport").onclick=()=>{
   const w=window.open("","_blank");
   if (!w) { alert("Na-block ang print window. Payagan ang pop-ups para sa site na ito."); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receivable Report</title><style>
-  @page{size:A4 landscape;margin:12mm}
+  @page{size:A4 portrait;margin:10mm}
   *{box-sizing:border-box}
-  body{font:11px Arial,Helvetica,sans-serif;color:#222;margin:0}
-  .print-report header{text-align:center;margin:0 0 18px}
-  .print-report h1{font-size:19px;font-weight:700;margin:0 0 5px}
-  .print-report header p{font-size:12px;color:#555;margin:2px 0}
-  .report-filter-line{font-size:10px!important;margin-top:5px!important}
-  table{width:100%;border-collapse:collapse;table-layout:fixed}
-  th,td{border:1px solid #c8cbd0;padding:7px 6px;text-align:left;vertical-align:middle;overflow-wrap:anywhere}
+  html,body{margin:0;padding:0;background:#fff;color:#222}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11px}
+  .print-report{width:88%;max-width:185mm;margin:38px auto 0}
+  .print-report header{text-align:center;margin:0 0 17px}
+  .print-report h1{font-size:16px;line-height:1.2;font-weight:700;margin:0 0 5px;color:#222}
+  .print-report header p{font-size:12px;line-height:1.25;color:#555;margin:2px 0}
+  .report-filter-line{font-size:9px!important;color:#666!important;margin-top:5px!important}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 auto}
+  th,td{border:1px solid #d0d2d6;padding:7px 6px;text-align:left;vertical-align:middle;font-size:11px;line-height:1.25;overflow-wrap:anywhere}
   thead{display:table-header-group}
-  thead th{background:#f0f1f3;font-weight:700}
+  thead th{background:#f0f1f3;font-weight:700;white-space:nowrap}
   tbody tr{page-break-inside:avoid}
-  .day-band th{background:#e4e6e9;text-align:left;font-weight:700}
+  .day-band th{background:#e4e6e9;text-align:left;font-weight:700;padding:7px}
   .day-subtotal th{background:#f7f8fa;font-weight:700}
-  tfoot{display:table-row-group}
-  tfoot th{background:#f2f3f5;font-weight:700}
   .money{text-align:right;white-space:nowrap}
-  .report-generated{text-align:right;color:#666;font-size:9px;margin-top:12px}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-report{width:100%}}
+  .grand-total{display:flex;justify-content:flex-end;align-items:baseline;gap:7px;margin:17px 0 0;font-size:15px}
+  .grand-amount{color:#d9534f}
+  .report-generated{text-align:right;color:#777;font-size:8px;margin:13px 0 0}
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .print-report{width:88%;max-width:185mm;margin:38px auto 0}
+    thead{display:table-header-group}
+    tr{page-break-inside:avoid}
+  }
   </style></head><body>${report}<script>window.onload=()=>{window.focus();window.print();};<\\/script></body></html>`);
   w.document.close();
 };
