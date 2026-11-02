@@ -166,12 +166,17 @@ async function readBpiConfirmationCrop(imageData, words) {
   const img = new Image();
   await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = imageData; });
   const b = marker.bbox;
-  // Start at the confirmation label rather than scanning the entire receipt row.
-  // This reduces the chance of collecting unrelated digits from nearby fields.
-  const x1 = Math.max(0, Math.floor(b.x0 - 8));
-  const x2 = img.naturalWidth;
-  const y1 = Math.max(0, Math.floor(b.y0 - 12));
-  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + 24));
+  // Isolate the single Confirmation No. line. The supplied BPI sample places
+  // the 13-digit ID immediately after the label on the same line. Scanning to
+  // the right edge of the whole receipt included unrelated text and weakened OCR.
+  const markerHeight = Math.max(12, b.y1 - b.y0);
+  const x1 = Math.max(0, Math.floor(b.x0 - 6));
+  const x2 = Math.min(
+    img.naturalWidth,
+    Math.ceil(Math.max(b.x1 + img.naturalWidth * 0.34, b.x0 + img.naturalWidth * 0.52))
+  );
+  const y1 = Math.max(0, Math.floor(b.y0 - markerHeight * 0.28));
+  const y2 = Math.min(img.naturalHeight, Math.ceil(b.y1 + markerHeight * 0.72));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, x2 - x1);
   canvas.height = Math.max(1, y2 - y1);
@@ -187,9 +192,10 @@ async function readBpiConfirmationCrop(imageData, words) {
   ectx.imageSmoothingQuality = 'high';
   ectx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
   const pixels = ectx.getImageData(0, 0, enlarged.width, enlarged.height);
+  // Normalize the photographed screen line while retaining thin digit strokes.
   for (let i = 0; i < pixels.data.length; i += 4) {
     const g = .299 * pixels.data[i] + .587 * pixels.data[i+1] + .114 * pixels.data[i+2];
-    const v = Math.max(0, Math.min(255, (g - 128) * 1.7 + 128));
+    const v = Math.max(0, Math.min(255, (g - 142) * 1.9 + 142));
     pixels.data[i] = pixels.data[i+1] = pixels.data[i+2] = v;
   }
   ectx.putImageData(pixels, 0, 0);
@@ -200,10 +206,24 @@ async function readBpiConfirmationCrop(imageData, words) {
   // from Tesseract votes so it cannot accidentally count as a Tesseract pass.
   if (window.OCRAD) {
     try {
-      ocradText = String(window.OCRAD(enlarged, { numeric: true }) || '').trim();
+      // OCRAD gets its own high-contrast monochrome copy. It remains an
+      // independent check and is never counted as a Tesseract pass.
+      const mono = document.createElement('canvas');
+      mono.width = enlarged.width;
+      mono.height = enlarged.height;
+      const mctx = mono.getContext('2d', { willReadFrequently: true });
+      mctx.drawImage(enlarged, 0, 0);
+      const mp = mctx.getImageData(0, 0, mono.width, mono.height);
+      for (let i = 0; i < mp.data.length; i += 4) {
+        const g = mp.data[i];
+        const v = g < 176 ? 0 : 255;
+        mp.data[i] = mp.data[i+1] = mp.data[i+2] = v;
+      }
+      mctx.putImageData(mp, 0, 0);
+      ocradText = String(window.OCRAD(mono, { numeric: true }) || '').trim();
       const digits = ocradText.replace(/\D/g, '');
       const matches = digits.match(/\d{10,20}/g) || [];
-      ocradRef = matches[0] || '';
+      ocradRef = matches.find(v => v.length === 13) || matches[0] || '';
     } catch (e) { ocradText = ''; ocradRef = ''; }
   }
   for (const psm of [7, 8, 13]) {
