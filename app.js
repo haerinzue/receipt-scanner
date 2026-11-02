@@ -94,7 +94,7 @@ $("readBtn").onclick = async () => {
     if (result.amount) $("amount").value = result.amount;
     if (result.date) $("txDate").value = result.date;
     if (result.time) $("txTime").value = result.time;
-    status("Tapos ang OCR. I-review at itama ang lahat ng field."); $("bar").style.width = "100%";
+    status(`Tapos ang OCR (${result.pass || "multi-pass"}; confidence ${result.confidence ?? "—"}%). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
