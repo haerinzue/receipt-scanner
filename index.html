@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Receipt Scanner</title>
+<style>
+:root{--bg:#0d172b;--panel:#19263b;--panel2:#121e32;--line:#30415a;--muted:#94a5bd;--text:#edf3ff;--blue:#397cf4;--violet:#8558f6;--green:#31c48d;--red:#f87171}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 8% 4%,#244b8d 0,transparent 23%),radial-gradient(circle at 92% 90%,#48318b 0,transparent 22%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1120px;margin:auto;padding:28px 20px 60px}.head{text-align:center;margin-bottom:26px}.head h1{font-size:30px;margin:0;color:#91a5ff;letter-spacing:.2px}.head p{color:var(--muted);margin:6px 0}
+.layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:18px;align-items:start}
+.card{background:rgba(25,38,59,.96);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 14px 38px #0003}
+h2{font-size:17px;margin:0 0 14px}h3{font-size:15px;margin:0 0 12px}.muted{color:var(--muted)}.small{font-size:12px;color:var(--muted)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.action{border:1px solid #40577c;background:linear-gradient(135deg,#286ee9,#8055f2);color:white;border-radius:13px;padding:16px 12px;cursor:pointer;text-align:center;font-weight:700;font-size:14px}
+.action.secondary{background:#202f48;border-color:#3a4b65}.action span{display:block;font-size:12px;font-weight:400;opacity:.85;margin-top:4px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.preview{background:#101b2e;border:1px dashed #40516d;border-radius:14px;min-height:230px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.preview img,.preview video{width:100%;max-height:460px;object-fit:contain;display:block}.placeholder{text-align:center;padding:30px;color:var(--muted)}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn{background:#253650;border:1px solid #40516d;color:#e9f0ff;border-radius:9px;padding:9px 13px;cursor:pointer;font-weight:600}.btn.primary{background:linear-gradient(110deg,var(--blue),var(--violet));border:0}.btn.danger{color:#ffc2c2}
+.progress{height:7px;background:#0d1728;border-radius:10px;overflow:hidden;margin-top:12px;display:none}.progress div{height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--violet));transition:width .2s}
+.status{margin-top:9px;color:#b8c8df;font-size:12px;min-height:18px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field.full{grid-column:1/-1}label{display:block;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.5px;margin-bottom:5px}
+input,select{width:100%;background:#111d30;color:var(--text);border:1px solid #3a4a63;border-radius:9px;padding:11px 12px;font:inherit;outline:none}input:focus,select:focus{border-color:#6e8dff}
+.notice{background:#302b21;border:1px solid #65502c;color:#f7d99a;border-radius:10px;padding:10px 12px;font-size:12px;margin:14px 0}
+.success{background:#14372f;border:1px solid #246b58;color:#a8f0d6}.records{margin-top:18px}.record{border:1px solid #30415a;background:#142137;border-radius:11px;padding:12px;margin-top:9px;display:grid;grid-template-columns:1fr auto;gap:8px}.record strong{display:block}.record .meta{color:var(--muted);font-size:12px}.tag{font-size:10px;color:#c7d5ff;background:#293b5b;padding:3px 7px;border-radius:20px;display:inline-block;margin-top:4px}
+.empty{color:var(--muted);text-align:center;padding:20px}.hidden{display:none!important}
+@media(max-width:780px){.layout{grid-template-columns:1fr}.wrap{padding:20px 12px}.fields{grid-template-columns:1fr}.field.full{grid-column:auto}}
+</style></head>
+<body><div class="wrap">
+<header class="head"><h1>Receipt Scanner</h1><p>GCash · Maya · BPI Transfer</p><div class="small">Kunan, basahin, suriin at i-save ang payment receipt</div></header>
+<div class="layout">
+<section class="card">
+<h2>1. Kunan o pumili ng resibo</h2>
+<div class="actions">
+<button class="action" id="openCamera">📷 Buksan ang Camera<span>Live camera / webcam</span></button>
+<button class="action secondary" id="uploadBtn">⬆ Upload Receipt<span>Screenshot o image file</span></button>
+<input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden">
+</div>
+<div class="preview" id="preview"><div class="placeholder">📄<br><b>Wala pang napipiling resibo</b><br><span class="small">Kunan ng litrato o mag-upload ng screenshot</span></div></div>
+<div class="controls hidden" id="cameraControls"><button class="btn primary" id="captureBtn">Kunan ng litrato</button><button class="btn" id="closeCamera">Isara ang camera</button></div>
+<div class="controls"><button class="btn primary" id="readBtn" disabled>Basahin ang resibo (OCR)</button><button class="btn" id="clearBtn">Linisin</button></div>
+<div class="progress" id="progress"><div id="bar"></div></div><div class="status" id="status" aria-live="polite"></div>
+<div class="notice">Paalala: kailangan ng internet sa unang OCR load. Pinakamainam ang malinaw, tuwid at buong screenshot. Hindi pinatutunayan ng OCR na pumasok ang bayad; i-verify pa rin sa inyong payment account.</div>
+</section>
+<section class="card">
+<h2>2. Suriin ang nakuhang impormasyon</h2>
+<div class="fields">
+<div class="field"><label>PAYMENT METHOD</label><select id="method"><option value="">Piliin / auto-detect</option><option>GCash</option><option>Maya</option><option>BPI Transfer</option><option>Unknown</option></select></div>
+<div class="field"><label>AMOUNT (₱)</label><input id="amount" placeholder="Hal. 1250.00" inputmode="decimal"></div>
+<div class="field full"><label>REFERENCE NUMBER</label><input id="reference" placeholder="Reference / Transaction ID"></div>
+<div class="field"><label>TRANSACTION DATE</label><input id="txDate" type="date"></div>
+<div class="field"><label>TRANSACTION TIME</label><input id="txTime" type="time"></div>
+<div class="field full"><label>OCR RAW TEXT (pang-review)</label><textarea id="rawText" rows="5" style="width:100%;background:#111d30;color:#cbd8ed;border:1px solid #3a4a63;border-radius:9px;padding:10px;font:12px/1.5 monospace" placeholder="Lalabas dito ang tekstong nabasa ng OCR..."></textarea></div>
+</div>
+<div class="notice" id="duplicateNotice" style="display:none"></div>
+<div class="controls"><button class="btn primary" id="saveBtn" disabled>💾 I-confirm at I-save</button><button class="btn" id="resetFields">I-clear ang fields</button></div>
+<p class="small">I-review at itama muna ang mga field. Ang scan date/time ay awtomatikong itatala sa oras ng pag-save.</p>
+</section></div>
+<section class="card records">
+<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">3. Mga na-save na resibo</h2><input id="search" style="max-width:280px" placeholder="Hanapin ang reference / method"></div>
+<div id="recordList"><div class="empty">Wala pang naka-save na resibo.</div></div>
+</section>
+<p class="small" style="text-align:center;margin-top:18px">Prototype v1 · Naka-save muna ang records sa browser na ito lamang (local device).</p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);let imageData=null,stream=null,db;
+const DB_NAME='ReceiptScannerDB',STORE='receipts';
+function setStatus(s){$('status').textContent=s}
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});r.onsuccess=()=>{db=r.result;resolve(db)};r.onerror=()=>reject(r.error)})}
+function tx(mode='readonly'){return db.transaction(STORE,mode).objectStore(STORE)}
+function allRecords(){return new Promise((res,rej)=>{let r=tx().getAll();r.onsuccess=()=>res(r.result.reverse());r.onerror=()=>rej(r.error)})}
+function saveRecord(rec){return new Promise((res,rej)=>{let r=tx('readwrite').add(rec);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function showImage(data){imageData=data;$('preview').innerHTML='';let img=document.createElement('img');img.src=data;$('preview').appendChild(img);$('readBtn').disabled=false;$('saveBtn').disabled=false}
+function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('cameraControls').classList.add('hidden')}
+$('openCamera').onclick=async()=>{try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera access requires HTTPS or localhost.');stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});$('preview').innerHTML='';let v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.srcObject=stream;$('preview').appendChild(v);$('cameraControls').classList.remove('hidden');setStatus('Camera ready. Iposisyon nang tuwid at buo ang resibo.')}catch(e){setStatus('Hindi mabuksan ang camera: '+e.message+' Subukan sa HTTPS o localhost.')}};
+$('captureBtn').onclick=()=>{let v=$('preview').querySelector('video');if(!v)return;let c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);showImage(c.toDataURL('image/jpeg',.92));stopCamera();setStatus('Nakuha ang larawan. Pindutin ang Basahin ang resibo.')};
+$('closeCamera').onclick=stopCamera;$('uploadBtn').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=e=>{let f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){setStatus('Image file lamang ang puwede.');return}let r=new FileReader();r.onload=()=>{showImage(r.result);setStatus('Na-upload ang larawan.');};r.readAsDataURL(f);e.target.value=''};
+function detectProvider(t){let s=t.toLowerCase();if(/gcash|g-xchange|g\s*cash/.test(s))return'GCash';if(/\bmaya\b|paymaya/.test(s))return'Maya';if(/\bbpi\b|bank of the philippine islands/.test(s))return'BPI Transfer';return''}
+function parseAmount(t){let lines=t.split(/\n/);for(let l of lines){if(/amount|total|sent|paid|transfer amount/i.test(l)){let m=l.match(/(?:₱|php|p\s*)?\s*([\d,]+\.\d{2})/i);if(m)return m[1].replace(/,/g,'')}}let vals=[...t.matchAll(/(?:₱|PHP)\s*([\d,]+\.\d{2})/gi)];return vals.length?vals[0][1].replace(/,/g,''):''}
+function parseReference(t){let patterns=[/(?:reference\s*(?:no\.?|number|#)?|ref(?:erence)?\s*id|transaction\s*id|trace\s*no\.?)\s*[:#\-]?\s*([A-Z0-9\-]{6,})/i,/(?:confirmation\s*no\.?)\s*[:#\-]?\s*([A-Z0-9\-]{6,})/i];for(let p of patterns){let m=t.match(p);if(m)return m[1]}return''}
+function parseDateTime(t){let d='';let m=t.match(/\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/);if(m)d=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;else{m=t.match(/\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b/);if(m)d=`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`}let tm='';m=t.match(/\b(1[0-2]|0?[1-9]):([0-5]\d)\s*(AM|PM)\b/i);if(m){let h=+m[1]%12;if(m[3].toUpperCase()==='PM')h+=12;tm=String(h).padStart(2,'0')+':'+m[2]}else{m=t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);if(m)tm=m[1].padStart(2,'0')+':'+m[2]}return[d,tm]}
+$('readBtn').onclick=async()=>{if(!imageData)return; if(!window.Tesseract){setStatus('Hindi ma-load ang OCR. Tingnan ang internet connection.');return}$('readBtn').disabled=true;$('progress').style.display='block';$('bar').style.width='5%';setStatus('Binabasa ang larawan...');try{const result=await Tesseract.recognize(imageData,'eng',{logger:m=>{if(m.status)setStatus(m.status==='recognizing text'?'Binabasa ang text...':m.status);if(m.progress)$('bar').style.width=Math.max(5,Math.round(m.progress*100))+'%'}});let t=result.data.text;$('rawText').value=t;let provider=detectProvider(t),ref=parseReference(t),amt=parseAmount(t),[date,time]=parseDateTime(t);if(provider)$('method').value=provider;if(ref)$('reference').value=ref;if(amt)$('amount').value=amt;if(date)$('txDate').value=date;if(time)$('txTime').value=time;setStatus('Tapos ang OCR. I-review ang lahat ng field; maaaring may kailangang itama.');$('bar').style.width='100%'}catch(e){setStatus('Nagkaproblema sa OCR: '+e.message)}finally{$('readBtn').disabled=false}};
+async function refresh(){let records=await allRecords(),q=$('search').value.toLowerCase();records=records.filter(r=>(r.reference+' '+r.method+' '+r.amount).toLowerCase().includes(q));let box=$('recordList');box.innerHTML='';if(!records.length){box.innerHTML='<div class="empty">Walang tugmang records.</div>';return}records.forEach(r=>{let el=document.createElement('div');el.className='record';let left=document.createElement('div');let strong=document.createElement('strong');strong.textContent=(r.method||'Unknown')+' · ₱'+(r.amount||'—');let meta=document.createElement('div');meta.className='meta';meta.textContent='Ref: '+(r.reference||'—')+' · Transaction: '+(r.txDate||'—')+' '+(r.txTime||'');let tag=document.createElement('span');tag.className='tag';tag.textContent='Saved '+new Date(r.savedAt).toLocaleString();left.append(strong,meta,tag);let right=document.createElement('div');let view=document.createElement('button');view.className='btn';view.textContent='Tingnan';view.onclick=()=>{let w=window.open();if(w){w.document.write('<title>Receipt</title><img style="max-width:100%" src="'+r.image+'">')}};right.append(view);el.append(left,right);box.append(el)});}
+$('saveBtn').onclick=async()=>{let reference=$('reference').value.trim(),amount=$('amount').value.trim();if(!imageData){setStatus('Kailangan munang pumili o kumuha ng receipt image.');return}if(!reference||!amount){setStatus('Kailangan ang Reference Number at Amount bago i-save.');return}let existing=await allRecords();if(existing.some(r=>r.reference.toLowerCase()===reference.toLowerCase())){if(!confirm('May kaparehong reference number na sa saved records. I-save pa rin?'))return}let rec={method:$('method').value||'Unknown',reference,amount,txDate:$('txDate').value,txTime:$('txTime').value,rawText:$('rawText').value,image:imageData,savedAt:new Date().toISOString()};try{await saveRecord(rec);setStatus('Matagumpay na na-save sa browser na ito.');$('duplicateNotice').style.display='none';refresh()}catch(e){setStatus('Hindi na-save: maaaring puno ang browser storage. '+e.message)}};
+$('clearBtn').onclick=()=>{stopCamera();imageData=null;$('preview').innerHTML='<div class="placeholder">📄<br><b>Wala pang napipiling resibo</b></div>';$('readBtn').disabled=true;$('saveBtn').disabled=true;setStatus('');$('fileInput').value=''};
+$('resetFields').onclick=()=>['method','amount','reference','txDate','txTime','rawText'].forEach(id=>$(id).value='');$('search').oninput=refresh;
+openDB().then(refresh).catch(e=>setStatus('Database error: '+e.message));
+</script></body></html>
