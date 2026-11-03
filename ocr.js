@@ -156,7 +156,7 @@ export async function readReceipt(imageData, onProgress = () => {}) {
       "content-type": "application/json",
       authorization: `Bearer ${accessToken}`
     },
-    body: JSON.stringify({ imageData: optimizedImage })
+    body: JSON.stringify({ imageBase64, mimeType: "image/jpeg" })
   });
 
   onProgress("Binabasa at kinukuha ang detalye ng resibo...", 0.82);
