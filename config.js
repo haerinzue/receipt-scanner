@@ -4,3 +4,5 @@
 export const SUPABASE_URL = "https://faropodmmltsfmxaucpk.supabase.co";
 export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0ykWNap-Bfd8frGgXQVfQA_yoODHHFA";
 export const RECEIPT_BUCKET = "receipt-images";
+
+export const TEXTRACT_FUNCTION_URL = "https://bf2wkldkb2a4jeufc73w4sc65a0jtpgj.lambda-url.ap-southeast-2.on.aws/";

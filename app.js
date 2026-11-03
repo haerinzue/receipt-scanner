@@ -148,10 +148,10 @@ $("fileInput").onchange = e => {
 };
 $("readBtn").onclick = async () => {
   if (!imageData) return;
-  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Sinusuri ang resibo gamit ang PaddleOCR PP-OCRv6 Small...");
+  $("readBtn").disabled = true; $("progress").classList.remove("hidden"); $("bar").style.width = "5%"; status("Sinusuri ang resibo gamit ang Amazon Textract...");
   try {
     const result = await readReceipt(imageData, (state, progress) => {
-      status(state === "recognizing text" ? "PaddleOCR: sinusuri ang teksto at mga detalye..." : state);
+      status(state);
       $("bar").style.width = Math.max(5,Math.round(progress*100)) + "%";
     });
     // Clear previous OCR-derived values first so an unread field cannot retain
@@ -173,7 +173,7 @@ $("readBtn").onclick = async () => {
       engineNote = ` BPI Confirmation No. line: ${mask(d.confirmationLine)}. ` +
         (result.referenceCheck === "paddle-confirmation-line" ? "Nakuha mula sa mismong confirmation line; pakisuri pa rin." : "Kailangan ng manual review.");
     }
-    status(`Tapos ang PaddleOCR (${result.pass || "PP-OCRv6 Small"}; average line confidence ${result.confidence ?? "—"}%; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.${engineNote}`); $("bar").style.width = "100%";
+    status(`Tapos ang ${result.engine || "Amazon Textract"} (${result.confidence ?? "—"}% confidence; ${filled}/5 fields nakuha). I-review at itama ang lahat ng field.`); $("bar").style.width = "100%";
   } catch(e) { status("Nagkaproblema sa OCR: " + e.message); }
   finally { $("readBtn").disabled = false; }
 };
